@@ -68,8 +68,9 @@ export function createApp(): Express {
   return app;
 }
 
-// ----------------------------------------------------
-// Vercel Serverless Function ke liye Default Export:
-// ----------------------------------------------------
-const app = createApp();
-export default app;
+// ... aapke saare imports aur createApp() function definition ...
+
+export function createApp(): Express {
+  // ... express config ...
+  return app;
+}
