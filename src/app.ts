@@ -20,12 +20,12 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 export function createApp(): Express {
   const app = express();
 
-  // Trust Vercel's reverse proxy so express-rate-limit
-  // can correctly identify the client IP.
+  // Trust Vercel's reverse proxy
   app.set("trust proxy", 1);
 
   const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
     .split(",")
+    .map((origin) => origin.trim())
     .filter(Boolean);
 
   app.use(
@@ -62,10 +62,12 @@ export function createApp(): Express {
     }),
   );
 
-  app.get("/health", (_req: Request, res: Response) =>
-    res.json({ status: "ok" }),
-  );
+  // Health check
+  app.get("/health", (_req: Request, res: Response) => {
+    res.json({ status: "ok" });
+  });
 
+  // API routes
   app.use("/auth", authRouter);
   app.use("/companies", companiesRouter);
   app.use("/skus", skusRouter);
@@ -77,17 +79,9 @@ export function createApp(): Express {
   app.use("/pnl", pnlRouter);
   app.use("/purchases", purchasesRouter);
 
+  // Error handlers
   app.use(notFoundHandler);
   app.use(errorHandler);
 
   return app;
 }
-
-// -----------------------------------------------------------
-// Vercel Serverless Function Wrapper & Default Export
-// -----------------------------------------------------------
-const app = createApp();
-
-export default (req: Request, res: Response) => {
-  return app(req, res);
-};
