@@ -20,13 +20,21 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 export function createApp(): Express {
   const app = express();
 
-  const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "").split(",").filter(Boolean);
+  // Trust Vercel's reverse proxy so express-rate-limit
+  // can correctly identify the client IP.
+  app.set("trust proxy", 1);
+
+  const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .filter(Boolean);
+
   app.use(
     cors({
       origin: allowedOrigins.length ? allowedOrigins : false,
       credentials: true,
     }),
   );
+
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -35,10 +43,15 @@ export function createApp(): Express {
           frameAncestors: ["'none'"],
         },
       },
-      hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
+      hsts: {
+        maxAge: 63072000,
+        includeSubDomains: true,
+        preload: true,
+      },
     }),
   );
-  app.use(express.json({ limit: "10mb" })); // CSV imports can be sizeable
+
+  app.use(express.json({ limit: "10mb" }));
 
   app.use(
     rateLimit({
@@ -49,7 +62,9 @@ export function createApp(): Express {
     }),
   );
 
-  app.get("/health", (_req: Request, res: Response) => res.json({ status: "ok" }));
+  app.get("/health", (_req: Request, res: Response) =>
+    res.json({ status: "ok" }),
+  );
 
   app.use("/auth", authRouter);
   app.use("/companies", companiesRouter);
