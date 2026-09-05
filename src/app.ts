@@ -1,4 +1,4 @@
-import express, { Express } from "express";
+import express, { Express, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -15,10 +15,7 @@ import { purchasesRouter } from "./routes/purchases";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 
 /**
- * The Express app with no listener attached. server.ts attaches one for
- * local dev / any persistent-process host; api/[...slug].ts exports this
- * same app directly as a Vercel serverless function. Nothing in here
- * assumes a particular hosting model.
+ * Express App initialization logic.
  */
 export function createApp(): Express {
   const app = express();
@@ -52,7 +49,7 @@ export function createApp(): Express {
     }),
   );
 
-  app.get("/health", (_req, res) => res.json({ status: "ok" }));
+  app.get("/health", (_req: Request, res: Response) => res.json({ status: "ok" }));
 
   app.use("/auth", authRouter);
   app.use("/companies", companiesRouter);
@@ -70,3 +67,9 @@ export function createApp(): Express {
 
   return app;
 }
+
+// ----------------------------------------------------
+// Vercel Serverless Function ke liye Default Export:
+// ----------------------------------------------------
+const app = createApp();
+export default app;
