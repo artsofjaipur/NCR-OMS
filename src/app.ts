@@ -68,9 +68,11 @@ export function createApp(): Express {
   return app;
 }
 
-// ... aapke saare imports aur createApp() function definition ...
+// -----------------------------------------------------------
+// Vercel Serverless Function Wrapper & Default Export
+// -----------------------------------------------------------
+const app = createApp();
 
-export function createApp(): Express {
-  // ... express config ...
-  return app;
-}
+export default (req: Request, res: Response) => {
+  return app(req, res);
+};
