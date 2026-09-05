@@ -2,6 +2,7 @@ import express, { Express, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+
 import { authRouter } from "./routes/auth";
 import { companiesRouter } from "./routes/companies";
 import { skusRouter } from "./routes/skus";
@@ -12,15 +13,15 @@ import { returnsRouter } from "./routes/returns";
 import { payoutsRouter } from "./routes/payouts";
 import { pnlRouter } from "./routes/pnl";
 import { purchasesRouter } from "./routes/purchases";
-import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 
-/**
- * Express App initialization logic.
- */
+import {
+  errorHandler,
+  notFoundHandler,
+} from "./middleware/errorHandler";
+
 export function createApp(): Express {
   const app = express();
 
-  // Trust Vercel's reverse proxy
   app.set("trust proxy", 1);
 
   const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
@@ -62,12 +63,10 @@ export function createApp(): Express {
     }),
   );
 
-  // Health check
   app.get("/health", (_req: Request, res: Response) => {
     res.json({ status: "ok" });
   });
 
-  // API routes
   app.use("/auth", authRouter);
   app.use("/companies", companiesRouter);
   app.use("/skus", skusRouter);
@@ -79,9 +78,10 @@ export function createApp(): Express {
   app.use("/pnl", pnlRouter);
   app.use("/purchases", purchasesRouter);
 
-  // Error handlers
   app.use(notFoundHandler);
   app.use(errorHandler);
 
   return app;
 }
+
+export default createApp();
