@@ -9,87 +9,39 @@ import { skusRouter } from "./routes/skus";
 import { warehousesRouter } from "./routes/warehouses";
 import { ordersRouter } from "./routes/orders";
 import { dispatchRouter } from "./routes/dispatch";
-import { returnsRouter } from "./routes/returns";
-import { payoutsRouter } from "./routes/payouts";
-import { pnlRouter } from "./routes/pnl";
-import { purchasesRouter } from "./routes/purchases";
 
-import {
-  errorHandler,
-  notFoundHandler,
-} from "./middleware/errorHandler";
+const app: Express = express();
 
-export function createApp(): Express {
-  const app = express();
+// IMPORTANT: Vercel sits in front of your Express app
+app.set("trust proxy", 1);
 
-  // Trust Vercel's reverse proxy
-  app.set("trust proxy", 1);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-  const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+app.use(helmet());
 
-  app.use(
-    cors({
-      origin: allowedOrigins.length ? allowedOrigins : false,
-      credentials: true,
-    }),
-  );
+app.use(
+  cors({
+    origin: process.env.CORS_ALLOWED_ORIGINS?.split(",") || "*",
+    credentials: true,
+  })
+);
 
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'none'"],
-          frameAncestors: ["'none'"],
-        },
-      },
-      hsts: {
-        maxAge: 63072000,
-        includeSubDomains: true,
-        preload: true,
-      },
-    }),
-  );
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+});
 
-  app.use(express.json({ limit: "10mb" }));
+app.use(limiter);
 
-  app.use(
-    rateLimit({
-      windowMs: 60_000,
-      limit: 120,
-      standardHeaders: true,
-      legacyHeaders: false,
-    }),
-  );
+// Routes
+app.use("/api/auth", authRouter);
+app.use("/api/companies", companiesRouter);
+app.use("/api/skus", skusRouter);
+app.use("/api/warehouses", warehousesRouter);
+app.use("/api/orders", ordersRouter);
+app.use("/api/dispatch", dispatchRouter);
 
-  // Health check
-  app.get("/health", (_req: Request, res: Response) => {
-    res.json({ status: "ok" });
-  });
-
-  // API routes
-  app.use("/auth", authRouter);
-  app.use("/companies", companiesRouter);
-  app.use("/skus", skusRouter);
-  app.use("/warehouses", warehousesRouter);
-  app.use("/orders", ordersRouter);
-  app.use("/dispatch", dispatchRouter);
-  app.use("/returns", returnsRouter);
-  app.use("/payouts", payoutsRouter);
-  app.use("/pnl", pnlRouter);
-  app.use("/purchases", purchasesRouter);
-
-  // Error handlers
-  app.use(notFoundHandler);
-  app.use(errorHandler);
-
-  return app;
-}
-
-// Create the actual Express application
-const app = createApp();
-
-// Export the Express application for Vercel
 export default app;
