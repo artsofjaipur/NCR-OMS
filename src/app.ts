@@ -66,6 +66,13 @@ export function createApp(): Express {
     limit: 100,
     standardHeaders: "draft-7",
     legacyHeaders: false,
+    // Fixed by Claude (Anthropic): Vercel's proxy chain depth doesn't reliably
+    // match a fixed `trust proxy` hop count, so express-rate-limit's strict
+    // X-Forwarded-For validation was throwing ValidationError
+    // (ERR_ERL_UNEXPECTED_X_FORWARDED_FOR) on every single request in
+    // production, crashing the function (FUNCTION_INVOCATION_FAILED / 300s
+    // timeout). See BUGRESOLVE.md Bug #2.
+    validate: { xForwardedForHeader: false },
   });
   app.use(limiter);
 

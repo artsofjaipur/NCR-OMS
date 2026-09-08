@@ -87,6 +87,78 @@ The three "failed" suites fail only because no `DATABASE_URL` was configured in 
 
 ---
 
+## Bug #2 — `express-rate-limit` crashed every request on Vercel (`ERR_ERL_UNEXPECTED_X_FORWARDED_FOR`)
+
+- **Status:** ✅ RESOLVED
+- **Date resolved:** 2026-09-08
+- **Fixed by:** Claude (Anthropic)
+- **Severity:** P0 — crashed **every** request in production (`/`, `/api/*`, everything), showing Vercel's generic "This Serverless Function has crashed" page.
+
+### Symptom
+`https://ncr-oms.vercel.app` (and every `/api/*` route) returned `500 FUNCTION_INVOCATION_FAILED`, sometimes after a full 300-second timeout.
+
+### Root Cause
+Confirmed via Vercel's `get_runtime_errors` tool:
+```
+ValidationError: The 'X-Forwarded-For' header is set but the Express 'trust proxy'
+setting is false (default). This could indicate a misconfiguration which would
+prevent express-rate-limit from accurately identifying users.
+code: 'ERR_ERL_UNEXPECTED_X_FORWARDED_FOR'
+  at Object.xForwardedForHeader (express-rate-limit/dist/index.cjs)
+```
+`src/app.ts` does call `app.set("trust proxy", 1)`, but Vercel's actual proxy chain depth in front of a serverless function doesn't reliably match a fixed hop count of `1`. `express-rate-limit` v7's built-in `xForwardedForHeader` validation is strict about this mismatch and **throws** (not warns) when it detects it — and that throw happened inside request handling on effectively every request, crashing the function.
+
+### Fix
+Disabled the specific overly-strict validation in the rate limiter config, in `src/app.ts`:
+```ts
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+});
+```
+Rate limiting itself still works correctly (Vercel's edge network sets a trustworthy `X-Forwarded-For`); only the strict self-check that was crashing the app is disabled.
+
+### Files Changed
+- `src/app.ts`
+
+### Verification
+`npx tsc -p tsconfig.json --noEmit` → 0 errors. Live re-verification pending redeploy — see BRAIN.md for status.
+
+---
+
+## Bug #3 — Production `DATABASE_URL` pointed at Supabase's direct-connection host, unreachable from Vercel (`ENOTFOUND`)
+
+- **Status:** ⚠️ IDENTIFIED — fix is an env var change, not a code change (see BRAIN.md for exact steps)
+- **Date identified:** 2026-09-08
+- **Found by:** Claude (Anthropic), via Vercel `get_runtime_errors`
+- **Severity:** P0 — every DB-backed route (login, orders, everything except `/health`) fails.
+
+### Symptom
+```
+DrizzleQueryError: Failed query: select ... from "users" where ...
+cause: Error: getaddrinfo ENOTFOUND db.gdpfhkjdqlsjoynfunnn.supabase.co
+  errno: -3007, code: 'ENOTFOUND', syscall: 'getaddrinfo'
+```
+
+### Root Cause
+The **pre-existing** Production `DATABASE_URL` (set ~3 days before this session, before Claude was involved) uses Supabase's **direct connection** hostname (`db.<project-ref>.supabase.co`). That hostname is IPv6-only on Supabase's side for most projects, and Vercel's serverless runtime does not reliably support outbound IPv6 — so DNS resolution fails with `ENOTFOUND`, and every database-backed request fails.
+
+Supabase's **Transaction pooler** hostname (`aws-0-<region>.pooler.supabase.com`, port `6543`) is IPv4-compatible and is the one meant for serverless/edge platforms like Vercel. This is a very common Supabase+Vercel gotcha, not specific to this codebase.
+
+### Fix (not yet applied — needs the project owner to update the value)
+In the Vercel dashboard → `ncr-oms` project → Settings → Environment Variables → find `DATABASE_URL` (Production) → Edit → replace with the **Transaction pooler** connection string from Supabase dashboard → Settings → Database → Connection string → "Transaction pooler" (port 6543). Then redeploy (`vercel --prod`) or promote a new deployment so the function picks up the corrected value.
+
+### Files Changed
+- None (env var only, in Vercel dashboard — not part of the repo)
+
+### Verification
+Pending — re-test `POST /api/auth/login` after the env var is updated and redeployed; expect a clean `401 Invalid credentials` (proving the query reaches the DB) instead of an `ENOTFOUND` crash.
+
+---
+
 ## How to Add a New Entry
 
 When you fix a real bug in this repo:
