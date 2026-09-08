@@ -125,15 +125,15 @@ Rate limiting itself still works correctly (Vercel's edge network sets a trustwo
 - `src/app.ts`
 
 ### Verification
-`npx tsc -p tsconfig.json --noEmit` → 0 errors. Live re-verification pending redeploy — see BRAIN.md for status.
+`npx tsc -p tsconfig.json --noEmit` → 0 errors. **Confirmed live 2026-09-08** via Vercel `get_runtime_errors`: the `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` error group is gone entirely from the post-fix deployment's logs.
 
 ---
 
 ## Bug #3 — Production `DATABASE_URL` pointed at Supabase's direct-connection host, unreachable from Vercel (`ENOTFOUND`)
 
-- **Status:** ⚠️ IDENTIFIED — fix is an env var change, not a code change (see BRAIN.md for exact steps)
-- **Date identified:** 2026-09-08
-- **Found by:** Claude (Anthropic), via Vercel `get_runtime_errors`
+- **Status:** ✅ RESOLVED
+- **Date resolved:** 2026-09-08
+- **Fixed by:** user (env var update), diagnosed by Claude (Anthropic)
 - **Severity:** P0 — every DB-backed route (login, orders, everything except `/health`) fails.
 
 ### Symptom
@@ -155,7 +155,35 @@ In the Vercel dashboard → `ncr-oms` project → Settings → Environment Varia
 - None (env var only, in Vercel dashboard — not part of the repo)
 
 ### Verification
-Pending — re-test `POST /api/auth/login` after the env var is updated and redeployed; expect a clean `401 Invalid credentials` (proving the query reaches the DB) instead of an `ENOTFOUND` crash.
+**Confirmed live 2026-09-08** via Vercel `get_runtime_logs` grouped by status code (last 15 min): `200, 304, 404` only — zero 500s, and the `ENOTFOUND` / `DrizzleQueryError` group is gone from `get_runtime_errors`.
+
+---
+
+## Bug #4 — API routes only worked with `/api/` prefix, contradicting README's "no prefix needed on Vercel" claim
+
+- **Status:** ✅ RESOLVED
+- **Date resolved:** 2026-09-08
+- **Fixed by:** Claude (Anthropic)
+- **Severity:** P1 — any client following the README literally (calling `/orders` instead of `/api/orders`) would get 404s on Vercel.
+
+### Symptom
+Confirmed live via direct fetch:
+```
+GET https://ncr-oms.vercel.app/api/orders → 401 {"error":"Missing bearer token"}   (route matched)
+GET https://ncr-oms.vercel.app/orders     → 404 {"error":"Not found"}              (route did NOT match)
+```
+
+### Root Cause
+`vercel.json` rewrites every path to `/api/index.ts`, and Vercel preserves the client's original URL in the function's `req` (that's what a rewrite means, vs. a redirect). `src/app.ts` only ever mounted routers under an `/api/...` prefix, so a request whose original path didn't include `/api` never matched anything inside Express, regardless of which Vercel function handled it.
+
+### Fix
+Every router in `src/app.ts` is now mounted at **both** its bare path (`/orders`) and its `/api`-prefixed path (`/api/orders`), via a small loop instead of 10 duplicated `app.use()` lines. Both forms now resolve identically.
+
+### Files Changed
+- `src/app.ts`
+
+### Verification
+`npx tsc -p tsconfig.json --noEmit` → 0 errors. Live re-verification pending redeploy of this change (previous confirmation above was against the pre-fix code, which is why `/orders` 404'd).
 
 ---
 

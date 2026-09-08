@@ -73,6 +73,19 @@
 - **Bug #3 (identified, not yet applied):** the pre-existing Production `DATABASE_URL` (set 3 days ago, before this session) points at Supabase's **direct-connection** host (`db.gdpfhkjdqlsjoynfunnn.supabase.co`), which is IPv6-only and does not resolve from Vercel's serverless runtime (`ENOTFOUND`). Needs to be replaced with the **Transaction pooler** connection string (port 6543) via the Vercel dashboard — this is an env var change, not a code change, so it needs the project owner to do it (Claude doesn't have the actual DB password). Full write-up: `BUGRESOLVE.md` Bug #3.
 - **Next step:** redeploy with the Bug #2 code fix, update the `DATABASE_URL` env var for Bug #3, redeploy again, then re-test `/health` and `POST /api/auth/login` on `ncr-oms.vercel.app`.
 
+### [2026-09-08] — **CONFIRMED FIXED**: both Bug #2 and Bug #3 resolved, verified live via Vercel `get_runtime_errors` / `get_runtime_logs`
+- User applied both fixes: replaced `src/app.ts` with the rate-limiter fix, and updated Production `DATABASE_URL` to the Supabase Transaction pooler connection string. Deployment happened via GitHub push ("Add files via upload" to `artsofjaipur/NCR-OMS`, auto-deployed by Vercel's GitHub integration) rather than the CLI this time — also confirms a real GitHub repo does exist and is connected for auto-deploy.
+- `get_runtime_errors` (last 10 min): only a harmless Node.js `DEP0169` deprecation warning (`url.parse()`) — **no more `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR`, no more `ENOTFOUND`**.
+- `get_runtime_logs` grouped by status code (last 15 min): `200: 1, 304: 1, 404: 2` — **zero 500s**.
+- **Status: NCR-OMS is now live and functioning correctly at `https://ncr-oms.vercel.app`.**
+- Still open (non-blocking, tracked in Known Open Issues): #6 route-prefix mismatch (`/orders` vs `/api/orders`), Zod validation errors returning 500 instead of 400, RLS disabled on Supabase tables, and filling `JWT_SECRET`/`ENCRYPTION_MASTER_KEY` into Preview/Development environments.
+
+### [2026-09-08] — Fix: route-prefix mismatch (Known Open Issue #6) — **DONE by Claude**
+- Confirmed live via direct fetch (using the connected Vercel MCP tools, no browser needed): `/api/orders` → 401 (matched, needs auth) vs `/orders` → 404 (not matched) — bug was real, not just theoretical.
+- User chose: fix the code so both forms work, rather than just fixing the README.
+- Fixed in `src/app.ts`: every router now mounted at both its bare path and its `/api`-prefixed path via a loop, instead of only the `/api`-prefixed one. Full write-up: `BUGRESOLVE.md` Bug #4.
+- `npx tsc --noEmit` → 0 errors. **Not yet redeployed/re-verified live** — needs another `git push` (or `vercel --prod`) + promote, same as the last two fixes.
+
 ---
 
 ## 3. Known Open Issues (not yet fixed — carried from README "Known gaps")
@@ -84,7 +97,7 @@ These are pre-existing, documented limitations of the codebase itself, not bugs 
 3. **Meesho "Ready to Ship" export has no AWB or address** — Daily Dispatch can't complete Meesho handoff until a Meesho label/manifest export exists to parse.
 4. **No UI** — API layer only, by design.
 5. **Deploy path unverified end-to-end** — build/tests pass locally against local Postgres; a real Supabase+Vercel deploy has not been exercised with live credentials.
-6. **NEW — found 2026-09-07, not yet fixed:** `vercel.json` rewrites every path (`/(.*)`) to `/api/index.ts`, and Vercel's rewrite preserves the original incoming URL in the handler's `req`. But `src/app.ts` mounts every router under an `/api/...` prefix (e.g. `app.use("/api/orders", ordersRouter)`). So a client request to `/orders/...` — which `README.md`'s "Deploy" section says should work directly on Vercel with no `/api` prefix — would actually hit `notFoundHandler` (404) once deployed, since the Express app never sees `/api` in the path it's matching against. Two valid fixes exist (strip `/api` prefix from the route mounts, or change the client-facing contract to include `/api`) — deliberately not picked for you; flag this to whoever owns the API contract before relying on the README's current wording.
+6. ~~`vercel.json` rewrites every path...~~ — **FIXED 2026-09-08**, see Change Log below and `BUGRESOLVE.md` Bug #4.
 
 ---
 

@@ -82,16 +82,27 @@ export function createApp(): Express {
   });
 
   // API Routes
-  app.use("/api/auth", authRouter);
-  app.use("/api/companies", companiesRouter);
-  app.use("/api/skus", skusRouter);
-  app.use("/api/warehouses", warehousesRouter);
-  app.use("/api/orders", ordersRouter);
-  app.use("/api/dispatch", dispatchRouter);
-  app.use("/api/returns", returnsRouter);
-  app.use("/api/payouts", payoutsRouter);
-  app.use("/api/pnl", pnlRouter);
-  app.use("/api/purchases", purchasesRouter);
+  // Fixed by Claude (Anthropic): mounted at both the bare path and the
+  // /api-prefixed path. Vercel's rewrite (vercel.json) sends every request
+  // to this same function while preserving the client's original URL, so
+  // depending on how a client calls the API (with or without /api/), either
+  // form now resolves to the same router. See BUGRESOLVE.md Bug #4.
+  const routeMounts: Array<[string, express.Router]> = [
+    ["/auth", authRouter],
+    ["/companies", companiesRouter],
+    ["/skus", skusRouter],
+    ["/warehouses", warehousesRouter],
+    ["/orders", ordersRouter],
+    ["/dispatch", dispatchRouter],
+    ["/returns", returnsRouter],
+    ["/payouts", payoutsRouter],
+    ["/pnl", pnlRouter],
+    ["/purchases", purchasesRouter],
+  ];
+  for (const [path, router] of routeMounts) {
+    app.use(path, router);
+    app.use(`/api${path}`, router);
+  }
 
   // Error Handling Middleware
   app.use(notFoundHandler);
