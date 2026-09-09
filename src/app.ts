@@ -18,6 +18,25 @@ import express, { Express, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import path from "path";
+import fs from "fs";
+
+// Static frontend (3D landing + auth pages) served by the same Express app.
+// Resolved robustly: tsx runs from src/, tsc output lands in dist/src/, and
+// Vercel runs with cwd at the project root — pick whichever candidate
+// actually contains the built site.
+function resolvePublicDir(): string {
+  const candidates = [
+    path.join(process.cwd(), "public"),
+    path.join(__dirname, "..", "public"),
+    path.join(__dirname, "..", "..", "public"),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, "index.html"))) return dir;
+  }
+  return candidates[0];
+}
+const PUBLIC_DIR = resolvePublicDir();
 
 import { authRouter } from "./routes/auth";
 import { companiesRouter } from "./routes/companies";
@@ -79,6 +98,27 @@ export function createApp(): Express {
   // Health Check
   app.get("/health", (_req: Request, res: Response) => {
     res.json({ status: "ok" });
+  });
+
+  // ---------------- Static frontend ----------------
+  // Explicit page routes first (so /login, /create-account, /forgot-password,
+  // /reset-password resolve directly), then the static middleware for assets,
+  // then index.html as the root.
+  app.use(express.static(PUBLIC_DIR, { index: false, maxAge: "1h" }));
+  app.get(["/", "/index.html"], (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "index.html"));
+  });
+  app.get("/login", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "login.html"));
+  });
+  app.get("/create-account", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "create-account.html"));
+  });
+  app.get("/forgot-password", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "forgot-password.html"));
+  });
+  app.get("/reset-password", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "reset-password.html"));
   });
 
   // API Routes

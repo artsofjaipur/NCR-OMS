@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-label="Kanjush">
+  <rect width="500" height="500" rx="28" fill="#0a0a0a"/>
+  <defs>
+    <linearGradient id="kj-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8c877"/>
+      <stop offset="0.5" stop-color="#c9a24b"/>
+      <stop offset="1" stop-color="#9a7420"/>
+    </linearGradient>
+  </defs>
+  <!-- navy K backbone -->
+  <path d="M300 128 L300 300 L322 300 L322 128 Z" fill="#2a3b63"/>
+  <!-- gold needle (vertical, with eye at top) -->
+  <g>
+    <line x1="268" y1="112" x2="268" y2="292" stroke="url(#kj-gold)" stroke-width="8" stroke-linecap="round"/>
+    <ellipse cx="268" cy="116" rx="9" ry="12" fill="none" stroke="url(#kj-gold)" stroke-width="6"/>
+    <circle cx="268" cy="112" r="5" fill="url(#kj-gold)"/>
+  </g>
+  <!-- flowing gold curves forming the ornate K arms -->
+  <g fill="none" stroke="url(#kj-gold)" stroke-width="10" stroke-linecap="round">
+    <path d="M300 176 C270 170 244 184 232 210"/>
+    <path d="M300 208 C280 220 268 240 268 264"/>
+  </g>
+  <!-- cascading swirls to the right -->
+  <g fill="none" stroke="url(#kj-gold)" stroke-linecap="round">
+    <path d="M322 220 C356 226 386 250 398 284" stroke-width="12"/>
+    <path d="M322 244 C348 254 368 274 376 300" stroke-width="9"/>
+    <path d="M322 264 C340 274 352 290 356 310" stroke-width="7"/>
+    <path d="M384 296 C392 306 394 318 390 328" stroke-width="7"/>
+  </g>
+  <!-- wordmark -->
+  <text x="250" y="398" text-anchor="middle" fill="#2a3b63"
+        font-family="Georgia, 'Times New Roman', serif" font-size="58" font-weight="600"
+        letter-spacing="6">KANJUSH</text>
+</svg>

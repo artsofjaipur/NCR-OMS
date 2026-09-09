@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NCR-OMS — Multi-Marketplace Order Management</title>
+<meta name="description" content="Live order, inventory, payout and P&L control across Flipkart, Meesho, Amazon and Snapdeal — for Vardhamiti, Arvagam and Kanjush." />
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0f0d;
+    --bg-2: #101815;
+    --panel: rgba(255, 255, 255, 0.04);
+    --panel-border: rgba(255, 255, 255, 0.09);
+    --gold: #d4af5e;
+    --gold-soft: #e8c877;
+    --green: #7fae4e;
+    --text: #f2efe8;
+    --muted: #9aa79e;
+    --lilac: #c9b8dd;
+    --pink: #f6c6c3;
+    --orange: #e8853d;
+    --navy: #2a3b63;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", system-ui, sans-serif;
+    overflow-x: hidden;
+  }
+  .serif { font-family: "Playfair Display", Georgia, serif; }
+
+  /* ---------- ambient background ---------- */
+  .ambient {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(600px 400px at 12% 8%, rgba(127, 174, 78, 0.10), transparent 60%),
+      radial-gradient(700px 500px at 88% 18%, rgba(212, 175, 94, 0.09), transparent 60%),
+      radial-gradient(700px 600px at 50% 100%, rgba(201, 184, 221, 0.06), transparent 65%);
+  }
+  .grid3d {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px);
+    background-size: 56px 56px;
+    transform: perspective(900px) rotateX(28deg) scale(1.35);
+    transform-origin: 50% 100%;
+    mask-image: linear-gradient(to top, rgba(0,0,0,0.9), transparent 62%);
+    -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,0.9), transparent 62%);
+    animation: gridflow 22s linear infinite;
+  }
+  @keyframes gridflow { from { background-position: 0 0; } to { background-position: 0 560px; } }
+
+  main, header, footer { position: relative; z-index: 1; }
+
+  /* ---------- header ---------- */
+  header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 28px;
+    background: rgba(10, 15, 13, 0.72);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .brandline { display: flex; align-items: center; gap: 12px; }
+  .brandline img { width: 40px; height: 40px; border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
+  .brandname { font-size: 19px; font-weight: 700; letter-spacing: 0.4px; }
+  .brandname span { color: var(--gold); }
+  nav { display: flex; gap: 8px; align-items: center; }
+  nav a.plain {
+    color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500;
+    padding: 9px 14px; border-radius: 10px; transition: color 0.2s, background 0.2s;
+  }
+  nav a.plain:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font-weight: 600; font-size: 15px; text-decoration: none; cursor: pointer;
+    border-radius: 12px; padding: 12px 22px; border: 1px solid transparent;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s, border-color 0.18s;
+  }
+  .btn-gold {
+    background: linear-gradient(135deg, var(--gold-soft), var(--gold));
+    color: #241b07;
+    box-shadow: 0 8px 24px rgba(212, 175, 94, 0.28), inset 0 1px 0 rgba(255,255,255,0.35);
+  }
+  .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(212, 175, 94, 0.4); }
+  .btn-ghost {
+    background: rgba(255,255,255,0.045); color: var(--text);
+    border-color: var(--panel-border);
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.09); transform: translateY(-2px); }
+
+  /* ---------- hero ---------- */
+  .hero {
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 130px 24px 80px; position: relative;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-size: 13px; font-weight: 600; color: var(--gold-soft);
+    background: rgba(212, 175, 94, 0.09); border: 1px solid rgba(212, 175, 94, 0.28);
+    padding: 8px 16px; border-radius: 999px; margin-bottom: 26px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.6s ease infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(127,174,78,0.5);} 50% { opacity: 0.6; box-shadow: 0 0 0 7px rgba(127,174,78,0);} }
+  .hero h1 {
+    font-size: clamp(42px, 7vw, 82px); line-height: 1.04; font-weight: 800;
+    letter-spacing: -1px; margin-bottom: 22px; perspective: 800px;
+  }
+  .hero h1 .lift {
+    display: inline-block;
+    text-shadow: 0 1px 0 #2a2a24, 0 2px 0 #27261f, 0 3px 0 #23221c, 0 4px 0 #1e1d18,
+                 0 10px 26px rgba(0,0,0,0.55);
+    color: var(--text);
+  }
+  .hero h1 .gold3d {
+    display: inline-block;
+    background: linear-gradient(180deg, #f4e3ac 0%, #d4af5e 55%, #9a7420 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 12px 22px rgba(212, 175, 94, 0.28));
+  }
+  .hero p.lede {
+    max-width: 660px; color: var(--muted); font-size: 17px; line-height: 1.65; margin-bottom: 36px;
+  }
+  .hero-cta { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+  .btn-lg { padding: 15px 30px; font-size: 16px; border-radius: 14px; }
+
+  /* ---------- 3D brand showcase ---------- */
+  .section { max-width: 1120px; margin: 0 auto; padding: 90px 24px; }
+  .kicker {
+    color: var(--gold-soft); font-size: 13px; font-weight: 700; letter-spacing: 3px;
+    text-transform: uppercase; text-align: center; margin-bottom: 12px;
+  }
+  .section h2 { font-size: clamp(30px, 4vw, 44px); text-align: center; font-weight: 700; margin-bottom: 14px; }
+  .section .sub { color: var(--muted); text-align: center; max-width: 620px; margin: 0 auto 52px; line-height: 1.6; }
+  .brandstage { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; perspective: 1400px; }
+  .brandcard {
+    position: relative; border-radius: 22px; padding: 18px;
+    background: linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
+    border: 1px solid var(--panel-border);
+    transform-style: preserve-3d;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s;
+    box-shadow: 0 20px 44px rgba(0,0,0,0.42);
+    will-change: transform;
+  }
+  .brandcard:hover { border-color: rgba(212, 175, 94, 0.45); box-shadow: 0 34px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(212,175,94,0.18); z-index: 2; }
+  .brandcard img {
+    width: 100%; display: block; border-radius: 16px; aspect-ratio: 1;
+    transform: translateZ(34px); transition: transform 0.25s ease;
+    box-shadow: 0 14px 30px rgba(0,0,0,0.35);
+  }
+  .brandcard .meta { transform: translateZ(22px); padding: 18px 8px 6px; }
+  .brandcard .meta h3 { font-size: 21px; font-weight: 700; margin-bottom: 6px; }
+  .brandcard .meta p { color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+  .tag {
+    display: inline-block; margin-top: 12px; font-size: 11.5px; font-weight: 700;
+    letter-spacing: 1.6px; text-transform: uppercase; color: var(--gold-soft);
+    background: rgba(212,175,94,0.08); border: 1px solid rgba(212,175,94,0.25);
+    padding: 5px 12px; border-radius: 999px;
+  }
+  .shine {
+    position: absolute; inset: 0; border-radius: 22px; pointer-events: none;
+    background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), rgba(255,255,255,0.10), transparent 45%);
+    opacity: 0; transition: opacity 0.25s;
+  }
+  .brandcard:hover .shine { opacity: 1; }
+
+  /* ---------- 3D floating live-data panel ---------- */
+  .live { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+  .live h2, .live .sub, .live .feat { text-align: left; }
+  .live .sub { margin: 0 0 34px; }
+  .feat { display: flex; gap: 16px; margin-bottom: 24px; }
+  .feat .ico {
+    flex: 0 0 46px; height: 46px; border-radius: 13px; display: grid; place-items: center;
+    font-size: 20px; background: rgba(127,174,78,0.10); border: 1px solid rgba(127,174,78,0.30);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+  }
+  .feat h4 { font-size: 16.5px; margin-bottom: 4px; }
+  .feat p { color: var(--muted); font-size: 14px; line-height: 1.55; }
+  .scene3d { perspective: 1200px; display: grid; place-items: center; }
+  .floatpanel {
+    position: relative; width: min(440px, 100%); border-radius: 24px; padding: 26px;
+    background: linear-gradient(165deg, rgba(255,255,255,0.075), rgba(255,255,255,0.02));
+    border: 1px solid var(--panel-border);
+    transform: rotateX(9deg) rotateY(-11deg);
+    transform-style: preserve-3d;
+    box-shadow: -30px 38px 70px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08);
+    animation: hover3d 7s ease-in-out infinite;
+  }
+  @keyframes hover3d {
+    0%,100% { transform: rotateX(9deg) rotateY(-11deg) translateY(0); }
+    50% { transform: rotateX(7deg) rotateY(-8deg) translateY(-12px); }
+  }
+  .fp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; transform: translateZ(26px); }
+  .fp-head .t { font-weight: 700; font-size: 15px; }
+  .livebadge {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700;
+    letter-spacing: 1.5px; color: #8fd15c; background: rgba(127,174,78,0.12);
+    border: 1px solid rgba(127,174,78,0.35); border-radius: 999px; padding: 5px 12px;
+  }
+  .statrow { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; transform: translateZ(34px); margin-bottom: 18px; }
+  .stat {
+    border-radius: 15px; padding: 14px; background: rgba(10,15,13,0.55);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .stat .v { font-size: 21px; font-weight: 800; }
+  .stat .v.gold { color: var(--gold-soft); }
+  .stat .v.green { color: #8fd15c; }
+  .stat .k { font-size: 10.5px; color: var(--muted); letter-spacing: 1.4px; text-transform: uppercase; margin-top: 4px; }
+  .chart { transform: translateZ(22px); }
+  .chart .bar {
+    display: flex; align-items: flex-end; gap: 9px; height: 120px;
+    border-radius: 12px; padding: 12px; background: rgba(10,15,13,0.55);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .chart .bar i {
+    flex: 1; border-radius: 6px 6px 3px 3px;
+    background: linear-gradient(180deg, var(--gold-soft), #8a6a26);
+    transform-origin: bottom; animation: grow 1.2s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  }
+  .chart .bar i:nth-child(even) { background: linear-gradient(180deg, #9dc46e, #4d7a2a); }
+  @keyframes grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  .chart .lbl { display: flex; justify-content: space-between; color: var(--muted); font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; margin-top: 9px; }
+
+  /* ---------- how it works ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+  .step {
+    border-radius: 20px; padding: 28px 24px;
+    background: linear-gradient(160deg, rgba(255,255,255,0.055), rgba(255,255,255,0.015));
+    border: 1px solid var(--panel-border);
+    transition: transform 0.22s, border-color 0.22s;
+  }
+  .step:hover { transform: translateY(-6px); border-color: rgba(212,175,94,0.4); }
+  .step .n {
+    width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
+    font-weight: 800; font-size: 17px; color: #241b07; margin-bottom: 16px;
+    background: linear-gradient(135deg, var(--gold-soft), var(--gold));
+    box-shadow: 0 8px 20px rgba(212,175,94,0.3);
+  }
+  .step h4 { font-size: 17.5px; margin-bottom: 8px; }
+  .step p { color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+  /* ---------- final CTA ---------- */
+  .cta {
+    text-align: center; border-radius: 28px; padding: 70px 30px; position: relative; overflow: hidden;
+    background:
+      radial-gradient(500px 260px at 50% 0%, rgba(212,175,94,0.14), transparent 65%),
+      linear-gradient(160deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015));
+    border: 1px solid rgba(212,175,94,0.28);
+  }
+  .cta h2 { font-size: clamp(28px, 4vw, 42px); margin-bottom: 14px; }
+  .cta p { color: var(--muted); max-width: 520px; margin: 0 auto 30px; line-height: 1.6; }
+
+  footer { border-top: 1px solid var(--panel-border); padding: 34px 24px; text-align: center; color: var(--muted); font-size: 13.5px; }
+  footer .fbrands { display: flex; gap: 18px; justify-content: center; margin-bottom: 16px; }
+  footer .fbrands img { width: 34px; height: 34px; border-radius: 9px; opacity: 0.85; transition: opacity 0.2s, transform 0.2s; }
+  footer .fbrands img:hover { opacity: 1; transform: translateY(-3px); }
+
+  .reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.7s ease, transform 0.7s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  @media (max-width: 940px) {
+    .brandstage { grid-template-columns: 1fr; max-width: 420px; margin: 0 auto; }
+    .live { grid-template-columns: 1fr; gap: 44px; }
+    .steps { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    nav a.plain { display: none; }
+    .statrow { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="ambient"></div>
+<div class="grid3d"></div>
+
+<header>
+  <div class="brandline">
+    <img src="/brand/vardhamiti.svg" alt="NCR-OMS" />
+    <div class="brandname serif">NCR<span>-</span>OMS</div>
+  </div>
+  <nav>
+    <a class="plain" href="#brands">Brands</a>
+    <a class="plain" href="#live">Live Data</a>
+    <a class="plain" href="#how">How it works</a>
+    <a class="btn btn-ghost" href="/login">Login</a>
+    <a class="btn btn-gold" href="/create-account">Create Account</a>
+  </nav>
+</header>
+
+<main>
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <div class="pill"><span class="dot"></span> LIVE SYNC — FLIPKART · MEESHO · AMAZON · SNAPDEAL</div>
+    <h1 class="serif">
+      <span class="lift">One command centre</span><br />
+      for <span class="gold3d">every order</span>
+    </h1>
+    <p class="lede">
+      NCR-OMS unifies orders, stock, dispatch, returns, payouts and live P&amp;L for
+      <strong style="color:var(--text)">Vardhamiti</strong>, <strong style="color:var(--text)">Arvagam</strong> and
+      <strong style="color:var(--text)">Kanjush</strong> — with real-time optimization across every marketplace.
+    </p>
+    <div class="hero-cta">
+      <a class="btn btn-gold btn-lg" href="/create-account">Create Free Account →</a>
+      <a class="btn btn-ghost btn-lg" href="/login">Login to Workspace</a>
+    </div>
+  </section>
+
+  <!-- ================= BRANDS (3D) ================= -->
+  <section class="section" id="brands">
+    <div class="kicker reveal">Powering three houses</div>
+    <h2 class="serif reveal">Built around your brands</h2>
+    <p class="sub reveal">
+      Every brand gets its own SKUs, listings, warehouses and marketplace accounts —
+      all under one login, with role-based access for your team.
+    </p>
+    <div class="brandstage">
+      <div class="brandcard reveal" data-tilt>
+        <div class="shine"></div>
+        <img src="/brand/vardhamiti.svg" alt="Vardhamiti" />
+        <div class="meta">
+          <h3 class="serif">Vardhamiti</h3>
+          <p>Rooted craft, grown with care. Independent stock ledger, dispatch and payout tracking.</p>
+          <span class="tag">Brand Workspace</span>
+        </div>
+      </div>
+      <div class="brandcard reveal" data-tilt>
+        <div class="shine"></div>
+        <img src="/brand/arvagam.svg" alt="Arvagam" />
+        <div class="meta">
+          <h3 class="serif">Arvagam</h3>
+          <p>Outfits that flirt back. Return lifecycle and QC checkpoints handled end to end.</p>
+          <span class="tag">Brand Workspace</span>
+        </div>
+      </div>
+      <div class="brandcard reveal" data-tilt>
+        <div class="shine"></div>
+        <img src="/brand/kanjush.svg" alt="Kanjush" />
+        <div class="meta">
+          <h3 class="serif">Kanjush</h3>
+          <p>Stitched with precision. Purchase entries, cost layers and live margin per order.</p>
+          <span class="tag">Brand Workspace</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LIVE DATA (3D panel) ================= -->
+  <section class="section" id="live">
+    <div class="live">
+      <div>
+        <div class="kicker reveal" style="text-align:left">Real-time optimization</div>
+        <h2 class="serif reveal">Data that moves<br />as fast as you sell</h2>
+        <p class="sub reveal">
+          The moment an order lands, stock is reserved atomically. Payouts reconcile
+          against expectations. Margin is computed live — never stale, never stored twice.
+        </p>
+        <div class="feat reveal">
+          <div class="ico">⚡</div>
+          <div>
+            <h4>Atomic order ingestion</h4>
+            <p>Orders and stock reservations commit in a single transaction — partial states are impossible.</p>
+          </div>
+        </div>
+        <div class="feat reveal">
+          <div class="ico">📦</div>
+          <div>
+            <h4>Append-only stock ledger</h4>
+            <p>Every unit in and out is an immutable ledger row with advisory-locked writes.</p>
+          </div>
+        </div>
+        <div class="feat reveal">
+          <div class="ico">📈</div>
+          <div>
+            <h4>Live P&amp;L per order</h4>
+            <p>Settlement minus period-dated COGS, computed on request — always current, never cached wrong.</p>
+          </div>
+        </div>
+      </div>
+      <div class="scene3d reveal">
+        <div class="floatpanel">
+          <div class="fp-head">
+            <span class="t">Today across brands</span>
+            <span class="livebadge"><span class="dot"></span> LIVE</span>
+          </div>
+          <div class="statrow">
+            <div class="stat"><div class="v gold" data-count="1284">0</div><div class="k">Orders</div></div>
+            <div class="stat"><div class="v green" data-count="98">0</div><div class="k">Dispatch %</div></div>
+            <div class="stat"><div class="v" data-count="24">0</div><div class="k">Returns</div></div>
+          </div>
+          <div class="chart">
+            <div class="bar" id="chartbar">
+              <i style="height:38%"></i><i style="height:56%"></i><i style="height:44%"></i>
+              <i style="height:70%"></i><i style="height:58%"></i><i style="height:86%"></i>
+              <i style="height:64%"></i><i style="height:94%"></i>
+            </div>
+            <div class="lbl"><span>Mon</span><span>Wed</span><span>Fri</span><span>Sun</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HOW ================= -->
+  <section class="section" id="how">
+    <div class="kicker reveal">How it works</div>
+    <h2 class="serif reveal">From upload to insight in three steps</h2>
+    <p class="sub reveal">Manual CSV uploads from any marketplace — plus a live API path when you're ready. Both land in the same optimized pipeline.</p>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="n">1</div>
+        <h4>Create your workspace</h4>
+        <p>Register your company, get an OWNER account, and a default warehouse is provisioned automatically.</p>
+      </div>
+      <div class="step reveal">
+        <div class="n">2</div>
+        <h4>Upload marketplace orders</h4>
+        <p>Drop in Flipkart, Meesho or Snapdeal exports. Parsers normalize every column into the OMS pipeline.</p>
+      </div>
+      <div class="step reveal">
+        <div class="n">3</div>
+        <h4>Watch everything reconcile</h4>
+        <p>Dispatch sheets, return QC, payout variances and live P&amp;L — per brand, per SKU, per order.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CTA ================= -->
+  <section class="section">
+    <div class="cta reveal">
+      <h2 class="serif">Ready to run all three brands<br />from one screen?</h2>
+      <p>Create your workspace in under a minute. Your first CSV upload can be today.</p>
+      <div class="hero-cta">
+        <a class="btn btn-gold btn-lg" href="/create-account">Create Account</a>
+        <a class="btn btn-ghost btn-lg" href="/login">Login</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="fbrands">
+    <img src="/brand/vardhamiti.svg" alt="Vardhamiti" />
+    <img src="/brand/arvagam.svg" alt="Arvagam" />
+    <img src="/brand/kanjush.svg" alt="Kanjush" />
+  </div>
+  <div class="serif" style="font-size:15px; color:var(--text); margin-bottom:6px;">NCR-OMS</div>
+  <div>Multi-marketplace order management · Vardhamiti · Arvagam · Kanjush</div>
+</footer>
+
+<script>
+  // ---- 3D tilt for brand cards ----
+  document.querySelectorAll("[data-tilt]").forEach((card) => {
+    const img = card.querySelector("img");
+    card.addEventListener("mousemove", (e) => {
+      const r = card.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width;
+      const py = (e.clientY - r.top) / r.height;
+      const rx = (0.5 - py) * 10;
+      const ry = (px - 0.5) * 12;
+      card.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg) translateY(-6px)`;
+      card.style.setProperty("--mx", px * 100 + "%");
+      card.style.setProperty("--my", py * 100 + "%");
+      if (img) img.style.transform = `translateZ(46px) scale(1.03)`;
+    });
+    card.addEventListener("mouseleave", () => {
+      card.style.transform = "";
+      if (img) img.style.transform = "";
+    });
+  });
+
+  // ---- scroll reveal ----
+  const io = new IntersectionObserver(
+    (entries) => entries.forEach((en) => en.isIntersecting && en.target.classList.add("in")),
+    { threshold: 0.14 }
+  );
+  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+
+  // ---- animated counters (live-data feel) ----
+  const fmt = (n) => n.toLocaleString("en-IN");
+  const cio = new IntersectionObserver((entries) => {
+    entries.forEach((en) => {
+      if (!en.isIntersecting) return;
+      const el = en.target;
+      const target = Number(el.dataset.count);
+      const t0 = performance.now();
+      const dur = 1400;
+      const tick = (t) => {
+        const p = Math.min(1, (t - t0) / dur);
+        el.textContent = fmt(Math.round(target * (1 - Math.pow(1 - p, 3))));
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      cio.unobserve(el);
+    });
+  }, { threshold: 0.6 });
+  document.querySelectorAll("[data-count]").forEach((el) => cio.observe(el));
+
+  // ---- replay chart bars when the panel enters view ----
+  const bio = new IntersectionObserver((entries) => {
+    entries.forEach((en) => {
+      if (!en.isIntersecting) return;
+      document.querySelectorAll("#chartbar i").forEach((b) => {
+        b.style.animation = "none";
+        void b.offsetWidth;
+        b.style.animation = "";
+      });
+      bio.unobserve(en.target);
+    });
+  }, { threshold: 0.4 });
+  const fp = document.querySelector(".floatpanel");
+  if (fp) bio.observe(fp);
+</script>
+</body>
+</html>

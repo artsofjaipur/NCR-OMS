@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-label="Vardhamiti">
+  <rect width="500" height="500" rx="28" fill="#2e3b31"/>
+  <defs>
+    <linearGradient id="vh-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f0d98c"/>
+      <stop offset="0.5" stop-color="#c9a24b"/>
+      <stop offset="1" stop-color="#a8811f"/>
+    </linearGradient>
+    <linearGradient id="vh-leaf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7fae4e"/>
+      <stop offset="1" stop-color="#4d7a2a"/>
+    </linearGradient>
+  </defs>
+  <!-- sprout emblem -->
+  <g>
+    <path d="M250 96 L286 148 L250 200 L214 148 Z" fill="url(#vh-gold)"/>
+    <path d="M250 96 L286 148 L250 200 Z" fill="#a8811f" opacity="0.55"/>
+    <rect x="247" y="196" width="6" height="60" rx="3" fill="#6f9a3e"/>
+    <!-- left leaf -->
+    <path d="M247 240 C210 240 186 222 178 196 C208 190 236 202 247 226 Z" fill="url(#vh-leaf)"/>
+    <!-- right leaf -->
+    <path d="M253 240 C290 240 314 222 322 196 C292 190 264 202 253 226 Z" fill="url(#vh-leaf)"/>
+  </g>
+  <!-- wordmark -->
+  <text x="250" y="298" text-anchor="middle" fill="#ffffff"
+        font-family="Georgia, 'Times New Roman', serif" font-size="52" font-weight="600"
+        letter-spacing="2">VARDHAMITI</text>
+  <!-- double gold rules split by center bar -->
+  <g stroke="url(#vh-gold)" stroke-width="5">
+    <line x1="120" y1="344" x2="228" y2="344"/>
+    <line x1="120" y1="358" x2="228" y2="358"/>
+    <line x1="272" y1="344" x2="380" y2="344"/>
+    <line x1="272" y1="358" x2="380" y2="358"/>
+  </g>
+  <line x1="250" y1="322" x2="250" y2="380" stroke="url(#vh-gold)" stroke-width="6"/>
+</svg>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-label="Arvagam">
+  <rect width="500" height="500" rx="28" fill="#c9b8dd"/>
+  <defs>
+    <linearGradient id="ar-navy" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d2b45"/>
+      <stop offset="1" stop-color="#131c2e"/>
+    </linearGradient>
+  </defs>
+  <circle cx="250" cy="240" r="150" fill="#f6c6c3"/>
+  <!-- stylised fashion figure rising from the A -->
+  <g fill="none" stroke="#e8853d" stroke-width="9" stroke-linecap="round">
+    <path d="M247 156 C259 150 272 156 274 170 C276 184 266 194 254 194"/>
+    <path d="M254 194 L250 226"/>
+    <path d="M250 200 C238 206 230 216 228 228"/>
+    <path d="M262 202 C272 210 276 220 274 232"/>
+    <path d="M250 226 C244 244 246 258 242 272 L238 292"/>
+    <path d="M254 226 C258 244 258 258 262 272 L266 292"/>
+  </g>
+  <!-- flowing hair -->
+  <path d="M274 166 C290 172 296 188 290 204 C302 198 306 182 300 170 C294 158 282 156 274 166 Z" fill="#e8853d"/>
+  <!-- wordmark -->
+  <text x="250" y="272" text-anchor="middle" fill="url(#ar-navy)"
+        font-family="Georgia, 'Times New Roman', serif" font-size="72" font-weight="700"
+        letter-spacing="3">ARVAGAM</text>
+  <text x="250" y="322" text-anchor="middle" fill="#e8853d"
+        font-family="Verdana, Geneva, sans-serif" font-size="21" font-weight="700"
+        letter-spacing="2.5">OUTFITS THAT FLIRT BACK</text>
+</svg>

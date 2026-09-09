@@ -20,6 +20,23 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-09] — Frontend added: 3D landing page + full auth flow (login / create account / forgot / reset) — **DONE by Buffy (Codebuff)**
+- **What was built** (user request: 3D landing page for the OMS with brand imagery of Vardhamiti / Arvagam / Kanjush, plus account creation, login and forgot-password — orders will be uploaded manually, both entry paths feed the same pipeline):
+  - **Static frontend served by the same Express app** — `public/` directory, wired in `src/app.ts` via `express.static` + explicit routes: `/` (landing), `/login`, `/create-account`, `/forgot-password`, `/reset-password`. `PUBLIC_DIR` resolves robustly for tsx dev, `dist/src/` (tsc build), and Vercel (`cwd()` root).
+  - **Brand logos recreated as SVGs** in `public/brand/` (`vardhamiti.svg` — dark-green + gold sprout; `arvagam.svg` — lilac + pink circle + orange figure; `kanjush.svg` — black + gold needle-K). Vector recreation from the brand images the user supplied; drop-in replaceable later with official files of the same names.
+  - **`public/index.html`** — 3D landing: mouse-tilt brand cards (3D transform + shine), perspective grid background, floating 3D live-data panel (animated counters, growing chart bars), scroll reveal, steps section, CTAs into `/create-account` and `/login`. No framework, no build step — loads Google Fonts only.
+  - **`public/login.html` / `create-account.html` / `forgot-password.html` / `reset-password.html`** — split-panel auth pages with a rotating 3D cube of the three brand faces, shared `public/auth.css` + `public/auth.js`. Login works **email+password only** (workspace resolved automatically); optional Workspace ID field for multi-company collisions. After login/register the token is kept in `sessionStorage.ncr_auth` and the page lands on `/app.html` (dashboard placeholder — next phase).
+- **New auth API endpoints** (extended `src/routes/auth.ts`):
+  - `POST /auth/register` — creates company + default warehouse + OWNER user in one transaction, returns JWT. Password ≥ 8 chars, 409 on duplicate email.
+  - `POST /auth/login` — `companyId` is now **optional**; email-only login resolves a unique active user across all companies, 409 with a clear message if the email exists in multiple workspaces.
+  - `POST /auth/forgot-password` — always 200 (no account enumeration); generates a 32-byte token, stores only its SHA-256 hash + 30-minute expiry (`users.reset_token_hash`, `users.reset_token_expires_at` — new columns, migration `drizzle/0001_add_password_reset_columns.sql`). Returns the raw token in the response as the email-provider-less delivery mode for now; wire an email service (e.g. Resend) before public launch.
+  - `POST /auth/reset-password` — single-use token, expiry enforced server-side, argon2id re-hash, token cleared after use.
+- **Fix: lazy DB client** (`src/db/client.ts`) — previously a missing `DATABASE_URL` threw at import time and crashed the whole process, taking the static frontend down with it. Now the app boots without credentials (previews work), every query fails with a clear error until the env var is set, and an idle-client `pool.on("error")` no longer crashes the process.
+- **Fix: Zod validation errors now return 400 with the field message** (`src/middleware/errorHandler.ts`) instead of a misleading 500 — resolves the long-standing known issue in this file's history.
+- **Preview config saved:** install `npm install`, preview `npx tsx watch src/server.ts` on port 3000, build `npx tsc -p tsconfig.json`. `freebuff-deploy check` → deployable, no problems.
+- **Verification:** `tsc --noEmit` clean; standalone tests 18/18; preview started and served `/`, `/login`, `/create-account`, `/forgot-password`, `/reset-password`, brand SVGs, CSS, JS all 200; validation returns 400 with field messages. Register/login/reset against a live DB still needs `DATABASE_URL` (Supabase) + `drizzle-kit push` of migration `0001` before first real use.
+- **Files touched:** `src/db/schema.ts`, `src/db/client.ts`, `src/routes/auth.ts`, `src/middleware/errorHandler.ts`, `src/app.ts`, `public/*` (new: index.html, login.html, create-account.html, forgot-password.html, reset-password.html, auth.css, auth.js, brand/*.svg), `drizzle/0001_add_password_reset_columns.sql` (+ drizzle meta), `BRAIN.md`.
+
 ### [2026-09-07] — Fix: `src/app.ts` missing named `createApp` export — **RESOLVED by Claude**
 - **Severity:** Build-breaking (P0). `npx tsc` failed with `TS2614` in 3 files.
 - **Root cause:** `src/app.ts` built the Express app and did `export default app;` (a singleton instance). But every consumer — `src/server.ts`, `api/index.ts`, `api/[...slug].ts`, `scripts/smoke.ts` — imports a **named** factory: `import { createApp } from "./app"`.

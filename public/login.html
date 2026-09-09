@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Login — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/auth.css" />
+</head>
+<body>
+<div class="ambient"></div>
+<a class="backlink" href="/">← Back to home</a>
+
+<div class="page">
+  <!-- ============ LEFT: 3D brand showcase ============ -->
+  <aside class="showcase">
+    <div class="sc-top">
+      <img src="/brand/vardhamiti.svg" alt="NCR-OMS" />
+      <div class="name serif">NCR<span>-</span>OMS</div>
+    </div>
+
+    <div class="cube-scene">
+      <div class="cube">
+        <figure class="f1"><img src="/brand/vardhamiti.svg" alt="Vardhamiti" /></figure>
+        <figure class="f2"><img src="/brand/arvagam.svg" alt="Arvagam" /></figure>
+        <figure class="f3"><img src="/brand/kanjush.svg" alt="Kanjush" /></figure>
+        <figure class="f4"><img src="/brand/vardhamiti.svg" alt="Vardhamiti" /></figure>
+        <figure class="f5"></figure>
+        <figure class="f6"></figure>
+      </div>
+    </div>
+
+    <div class="sc-quotes">
+      <blockquote>Rooted craft, grown with care — <b>Vardhamiti</b> ships heritage with precision.</blockquote>
+      <blockquote>Outfits that flirt back — <b>Arvagam</b> turns returns into repeat customers.</blockquote>
+      <blockquote>Stitched with precision — <b>Kanjush</b> knows its margin on every single piece.</blockquote>
+    </div>
+    <ul class="sc-points">
+      <li>One login for every brand workspace</li>
+      <li>Live stock, payouts and P&amp;L — always current</li>
+      <li>Manual CSV upload or marketplace API, your choice</li>
+    </ul>
+  </aside>
+
+  <!-- ============ RIGHT: login form ============ -->
+  <section class="formside">
+    <div class="card">
+      <h1 class="serif">Welcome back</h1>
+      <p class="sub">Sign in to your workspace. Just your email and password — we'll find your company automatically.</p>
+
+      <div id="alert" class="alert" role="alert"></div>
+
+      <div class="brandpick" aria-hidden="true">
+        <button type="button" data-name="Vardhamiti"><img src="/brand/vardhamiti.svg" alt="" /><span>VARDHAMITI</span></button>
+        <button type="button" data-name="Arvagam"><img src="/brand/arvagam.svg" alt="" /><span>ARVAGAM</span></button>
+        <button type="button" data-name="Kanjush"><img src="/brand/kanjush.svg" alt="" /><span>KANJUSH</span></button>
+      </div>
+
+      <form id="login-form" novalidate>
+        <label for="email">EMAIL</label>
+        <div class="field"><input id="email" type="email" placeholder="you@company.com" autocomplete="email" /></div>
+
+        <label for="password">PASSWORD</label>
+        <div class="field"><input id="password" type="password" placeholder="••••••••" autocomplete="current-password" /></div>
+
+        <label for="workspaceId">WORKSPACE ID <span style="opacity:0.6">(optional)</span></label>
+        <div class="field"><input id="workspaceId" type="text" inputmode="numeric" placeholder="Only if support gave you one" autocomplete="off" /></div>
+        <div class="hint">Leave empty normally — your email identifies the workspace.</div>
+
+        <div class="row"><a href="/forgot-password.html">Forgot password?</a></div>
+
+        <button id="login-btn" class="btn" type="submit"><span class="spin"></span>Sign in to Workspace</button>
+      </form>
+
+      <p class="footnote">New here? <a href="/create-account.html">Create an account</a></p>
+    </div>
+  </section>
+</div>
+<script src="/auth.js"></script>
+</body>
+</html>

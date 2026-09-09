@@ -115,6 +115,11 @@ export const users = pgTable(
     role: userRoleEnum("role").notNull().default("OPS"),
     displayName: varchar("display_name", { length: 150 }),
     isActive: boolean("is_active").notNull().default(true),
+    // Self-serve password reset (added 2026-09-09): a short-lived single-use
+    // token hash + expiry, filled by POST /auth/forgot-password and consumed
+    // by POST /auth/reset-password. Kept on users so no extra table is needed.
+    resetTokenHash: text("reset_token_hash"),
+    resetTokenExpiresAt: timestamp("reset_token_expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

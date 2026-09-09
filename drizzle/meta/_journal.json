@@ -8,6 +8,13 @@
       "when": 1788759417426,
       "tag": "0000_busy_hedge_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788933910912,
+      "tag": "0001_add_password_reset_columns",
+      "breakpoints": true
     }
   ]
 }
