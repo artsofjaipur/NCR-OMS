@@ -20,6 +20,12 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-09] — Production diagnosis: `/` still hangs on prod domain; auth endpoints 500 — **root causes identified by Buffy (Codebuff)**
+- **Symptom 1:** `/` returns empty/hang (curl 000) on `ncr-oms.vercel.app` while `/login`, `/brand/*`, `/index.html`, `/health` all return 200. The vercel.json rewrite fix was committed twice (`67b8bc6` destination→`/api`, then `46b664a` `/`→static `/index.html` first). Deploys report success but prod domain behavior never changes.
+- **Symptom 2:** `/auth/login` and `/auth/reset-password` return 500 in production. Diagnosed via `/auth/reset-password` with a fake token: valid-shaped input should 400 (token mismatch is a 400 in the code) but returned 500 → the DB query itself is failing. Most likely cause: migration `0001_add_password_reset_columns.sql` was never applied to Supabase, so `users.reset_token_hash` doesn't exist and Drizzle's full-row select on `users` breaks **every** auth query including login.
+- **Strong suspicion for Symptom 1:** same pattern as the Sep 5 incident — a manual rollback/rollack pin disables auto-promotion, so the production domain stays pinned to an old deployment while every new deploy succeeds. Needs the owner to promote the latest deployment manually in the Vercel dashboard.
+- **Owner actions required (no dashboard access from code side):** (1) Vercel → Deployments → promote latest to Production; (2) Supabase SQL editor → run the two ALTER TABLE statements from `drizzle/0001_add_password_reset_columns.sql`.
+
 ### [2026-09-09] — Frontend added: 3D landing page + full auth flow (login / create account / forgot / reset) — **DONE by Buffy (Codebuff)**
 - **What was built** (user request: 3D landing page for the OMS with brand imagery of Vardhamiti / Arvagam / Kanjush, plus account creation, login and forgot-password — orders will be uploaded manually, both entry paths feed the same pipeline):
   - **Static frontend served by the same Express app** — `public/` directory, wired in `src/app.ts` via `express.static` + explicit routes: `/` (landing), `/login`, `/create-account`, `/forgot-password`, `/reset-password`. `PUBLIC_DIR` resolves robustly for tsx dev, `dist/src/` (tsc build), and Vercel (`cwd()` root).
