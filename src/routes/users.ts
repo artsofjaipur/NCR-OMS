@@ -75,6 +75,7 @@ usersRouter.post("/", requireRole("OWNER", "ADMIN"), async (req, res, next) => {
 const patchSchema = z
   .object({
     displayName: z.string().trim().min(1).max(150).optional(),
+    email: z.string().trim().toLowerCase().email().optional(),
     role: z.enum(["ADMIN", "OPS", "VIEWER"]).optional(),
     isActive: z.boolean().optional(),
     permissions: z.array(z.enum(SECTIONS)).nullable().optional(),
@@ -109,11 +110,24 @@ usersRouter.patch("/:id", requireRole("OWNER", "ADMIN"), async (req, res, next) 
       throw new HttpError(403, "You cannot deactivate your own account");
     }
 
+    // Email change — must stay unique inside the workspace.
+    if (body.email !== undefined) {
+      const [dupe] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.companyId, req.session!.companyId), eq(users.email, body.email)))
+        .limit(1);
+      if (dupe && dupe.id !== id) throw new HttpError(409, "This email is already used by another user in your workspace");
+    }
+
     const patch: Record<string, unknown> = {};
     if (body.displayName !== undefined) patch.displayName = body.displayName;
+    if (body.email !== undefined) patch.email = body.email;
     if (body.role !== undefined) patch.role = body.role;
     if (body.isActive !== undefined) patch.isActive = body.isActive;
-    if (body.permissions !== undefined) patch.permissions = body.permissions && body.permissions.length ? body.permissions : null;
+    // Explicit semantics: null = follow role defaults; [] = no section access
+    // at all; ["finance", …] = exactly these sections.
+    if (body.permissions !== undefined) patch.permissions = body.permissions ?? null;
     if (body.password !== undefined) patch.passwordHash = await hashPassword(body.password);
 
     await db.update(users).set(patch).where(eq(users.id, id));
