@@ -1,0 +1,107 @@
+/* NCR-OMS Finance — extends dashboard tokens; money-first luxe layout. */
+
+/* ---------- KPI strip (4-up) ---------- */
+.kpis-4 { grid-template-columns: repeat(4, 1fr); }
+.kpi-warn .kpi-value { color: var(--gold); }
+
+/* ---------- tabs (same look as scan station) ---------- */
+.tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+.tabs button {
+  background: var(--bg2); border: 1px solid var(--line2); color: var(--muted);
+  padding: 11px 16px; border-radius: 12px; cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 600;
+  transition: all .2s;
+}
+.tabs button.sel { border-color: var(--gold2); color: var(--gold); background: rgba(216,180,92,.08); }
+
+/* ---------- tables ---------- */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.ftable { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 640px; }
+.ftable thead th {
+  text-align: left; font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--muted); padding: 12px 14px; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.ftable tbody td { padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,.04); white-space: nowrap; }
+.ftable tbody tr:last-child td { border-bottom: none; }
+.ftable tbody tr:hover td { background: rgba(255,255,255,.02); }
+.ftable .empty { text-align: center; color: var(--muted); padding: 26px; white-space: normal; }
+.money { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.money.pos { color: var(--green); }
+.money.neg { color: var(--red); }
+.money.zero { color: var(--muted); font-weight: 400; }
+.money-hero { font-size: 14.5px; font-weight: 700; }
+tr.overdue-row td { background: rgba(229,105,122,.05); }
+tr.settled-row td { color: var(--muted); }
+
+/* ---------- status pills ---------- */
+.pill { font-size: 10px; letter-spacing: 1px; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.pill-ok { background: rgba(70,185,138,.14); color: var(--green); }
+.pill-pend { background: rgba(216,180,92,.14); color: var(--gold); }
+.pill-red { background: rgba(229,105,122,.14); color: var(--red); }
+
+/* ---------- action buttons in tables ---------- */
+.mini {
+  background: none; border: 1px solid var(--line2); color: var(--gold);
+  font: inherit; font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 8px; cursor: pointer;
+  transition: all .2s;
+}
+.mini:hover { border-color: var(--gold2); background: rgba(216,180,92,.08); }
+.mini.danger { color: var(--red); }
+.mini.danger:hover { border-color: var(--red); background: rgba(229,105,122,.08); }
+
+/* ---------- forms ---------- */
+.fgrid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end;
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 16px;
+}
+.fgrid-tight { gap: 10px; padding: 14px; }
+.fgrid-title { grid-column: 1 / -1; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.fgrid label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+.fgrid input, .fgrid select {
+  background: var(--bg2); border: 1.5px solid var(--line2); color: var(--text);
+  border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 13.5px; outline: none; min-width: 0;
+}
+.fgrid input:focus, .fgrid select:focus { border-color: var(--gold2); }
+.fgrid .btn { justify-self: start; }
+.notes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 760px) { .notes-grid { grid-template-columns: 1fr; } }
+
+.result { border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; font-size: 13.5px; }
+.result.ok { background: rgba(70,185,138,.1); border: 1px solid rgba(70,185,138,.35); color: var(--green); }
+.result.bad { background: rgba(229,105,122,.1); border: 1px solid rgba(229,105,122,.35); color: var(--red); }
+
+/* ---------- cashflow chart ---------- */
+.cf-chart {
+  display: flex; align-items: flex-end; gap: 3px; height: 200px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 14px 8px;
+  overflow-x: auto;
+}
+.cf-col { flex: 1; min-width: 10px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; height: 100%; position: relative; }
+.cf-bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 2px; transition: height .4s ease; }
+.cf-bar.in { background: linear-gradient(180deg, rgba(70,185,138,.95), rgba(70,185,138,.45)); }
+.cf-bar.out { background: linear-gradient(180deg, rgba(229,105,122,.9), rgba(229,105,122,.4)); }
+.cf-col:hover .cf-tip { opacity: 1; }
+.cf-tip {
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: var(--card2); border: 1px solid var(--line2); color: var(--text);
+  font-size: 10.5px; padding: 5px 8px; border-radius: 8px; white-space: nowrap; opacity: 0;
+  pointer-events: none; transition: opacity .15s; z-index: 5;
+}
+.cf-legend { display: flex; gap: 20px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.cf-legend .lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.lg-in { background: var(--green); }
+.lg-out { background: var(--red); }
+
+/* ---------- misc ---------- */
+.bm-mini {
+  background: none; border: 1px solid var(--line2); color: var(--muted);
+  font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 8px; cursor: pointer;
+}
+.bm-mini:hover { color: var(--text); border-color: var(--gold2); }
+#ledger-box { margin-top: 20px; }
+.spin { display: none; }
+button.loading .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(0,0,0,.3); border-top-color: rgba(0,0,0,.85); border-radius: 50%; margin-right: 6px; animation: spin .7s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 980px) {
+  .kpis-4 { grid-template-columns: repeat(2, 1fr); }
+}

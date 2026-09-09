@@ -31,9 +31,13 @@ const confirmSchema = z.object({
 // Confirmation moves real money on the books — OWNER/ADMIN only.
 payoutsRouter.post("/:id/confirm-received", requireRole("OWNER", "ADMIN"), async (req, res, next) => {
   try {
+    const payoutBatchId = Number(req.params.id);
+    if (!Number.isInteger(payoutBatchId) || payoutBatchId <= 0) {
+      return res.status(400).json({ error: "Invalid payout batch id" });
+    }
     const body = confirmSchema.parse(req.body);
     await confirmReceivedPayout({
-      payoutBatchId: Number(req.params.id),
+      payoutBatchId,
       receivedAmount: body.receivedAmount,
       receivedDate: new Date(body.receivedDate),
       bankReference: body.bankReference,

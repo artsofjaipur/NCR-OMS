@@ -14,6 +14,8 @@ const schema = z.object({
   supplierInvoiceNumber: z.string().optional(),
   invoiceDate: z.string().datetime().optional(),
   adjustmentReason: z.string().optional(),
+  dueDate: z.string().datetime().optional(),
+  notes: z.string().optional(),
   items: z.array(z.object({ skuId: z.number().int().positive(), quantity: z.number().int().positive(), unitCost: z.string() })).min(1),
 });
 
@@ -30,6 +32,8 @@ purchasesRouter.post("/", async (req, res, next) => {
       supplierInvoiceNumber: body.supplierInvoiceNumber ?? null,
       invoiceDate: body.invoiceDate ? new Date(body.invoiceDate) : null,
       adjustmentReason: body.adjustmentReason ?? null,
+      dueDate: body.dueDate ? new Date(body.dueDate) : null,
+      notes: body.notes ?? null,
       createdByUserId: req.session!.userId,
       items: body.items,
     });

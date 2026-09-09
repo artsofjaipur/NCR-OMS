@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Finance — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Finance</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- ==================== KPI STRIP ==================== -->
+  <section class="kpis kpis-4">
+    <div class="kpi">
+      <div class="kpi-label">Money In (received)</div>
+      <div class="kpi-value" id="k-in">—</div>
+      <div class="kpi-sub" id="k-in-sub">store payouts</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Payouts Pending</div>
+      <div class="kpi-value" id="k-pend">—</div>
+      <div class="kpi-sub" id="k-pend-sub">expected not received</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Party Bills Total</div>
+      <div class="kpi-value" id="k-bills">—</div>
+      <div class="kpi-sub" id="k-bills-sub">purchases</div>
+    </div>
+    <div class="kpi kpi-warn">
+      <div class="kpi-label">Outstanding Payable</div>
+      <div class="kpi-value" id="k-out">—</div>
+      <div class="kpi-sub" id="k-out-sub">bills − payments − credit</div>
+    </div>
+  </section>
+
+  <!-- ==================== TABS ==================== -->
+  <div class="tabs" role="tablist">
+    <button type="button" class="sel" data-tab="stores">🏪 Store Money-In</button>
+    <button type="button" data-tab="cashflow">📈 Cashflow</button>
+    <button type="button" data-tab="bills">🧾 Bills</button>
+    <button type="button" data-tab="payments">💸 Payments</button>
+    <button type="button" data-tab="notes">📄 Credit / Debit</button>
+    <button type="button" data-tab="parties">🤝 Parties</button>
+  </div>
+
+  <!-- ============ STORE MONEY-IN ============ -->
+  <section class="panel" id="tab-stores">
+    <div class="panel-head"><h2 class="serif">Kis store se, kab, kitna</h2><span class="chip">PAYOUTS</span></div>
+    <p class="panel-sub">Marketplace store ke hisaab se payout batches — expected vs received, date reference ke saath.</p>
+    <div class="tablewrap"><table class="ftable" id="payouts-table">
+      <thead><tr><th>Store</th><th>Marketplace</th><th>Brand</th><th>Expected</th><th>Received</th><th>Amount</th><th>Bank Ref</th><th>Status</th></tr></thead>
+      <tbody><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ============ CASHFLOW ============ -->
+  <section class="panel" id="tab-cashflow" hidden>
+    <div class="panel-head"><h2 class="serif">Cashflow — last 30 days</h2><span class="chip">IN vs OUT</span></div>
+    <p class="panel-sub">Green bars = money received from stores, red bars = money paid to parties. Net line shows the daily position.</p>
+    <div class="cf-chart" id="cf-chart"></div>
+    <div class="cf-legend">
+      <span><i class="lg lg-in"></i> Money In (store payouts)</span>
+      <span><i class="lg lg-out"></i> Money Out (party payments)</span>
+    </div>
+  </section>
+
+  <!-- ============ BILLS ============ -->
+  <section class="panel" id="tab-bills" hidden>
+    <div class="panel-head"><h2 class="serif">Party Bills</h2><span class="chip" id="bills-chip">0 BILLS</span></div>
+    <p class="panel-sub">Purchase bills with paid / credited / balance. Overdue bills highlight red — pay from the Parties tab or below.</p>
+    <div class="tablewrap"><table class="ftable" id="bills-table">
+      <thead><tr><th>Invoice</th><th>Party</th><th>Date</th><th>Due</th><th>Total</th><th>Paid</th><th>Credited</th><th>Balance</th><th></th></tr></thead>
+      <tbody><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ============ PAYMENTS ============ -->
+  <section class="panel" id="tab-payments" hidden>
+    <div class="panel-head"><h2 class="serif">Payments to Parties</h2><span class="chip">MONEY OUT</span></div>
+    <p class="panel-sub">Har payment ka record — method, reference, date. Owner/Admin hi payment entry kar sakte hain.</p>
+    <form id="pay-form" class="fgrid">
+      <label>Party <select id="pay-party" required></select></label>
+      <label>Amount (₹) <input id="pay-amount" type="number" step="0.01" min="0.01" required placeholder="5000.00" /></label>
+      <label>Method
+        <select id="pay-method">
+          <option value="BANK_TRANSFER">Bank Transfer</option>
+          <option value="UPI">UPI</option>
+          <option value="CASH">Cash</option>
+          <option value="CHEQUE">Cheque</option>
+          <option value="ADJUSTED">Adjusted</option>
+        </select>
+      </label>
+      <label>Reference <input id="pay-ref" type="text" maxlength="100" placeholder="UTR / txn no." /></label>
+      <label>Date <input id="pay-date" type="date" /></label>
+      <button type="submit" class="btn" id="pay-btn"><span class="spin"></span>Record Payment</button>
+    </form>
+    <div class="result" id="pay-result" hidden></div>
+    <div class="tablewrap"><table class="ftable" id="payments-table">
+      <thead><tr><th>Date</th><th>Party</th><th>Amount</th><th>Method</th><th>Reference</th><th>By</th><th>Notes</th></tr></thead>
+      <tbody><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ============ NOTES ============ -->
+  <section class="panel" id="tab-notes" hidden>
+    <div class="panel-head"><h2 class="serif">Credit &amp; Debit Notes</h2><span class="chip">ADJUSTMENTS</span></div>
+    <p class="panel-sub"><b>Credit note</b> (party ne diya) aapki payable kam karta hai · <b>Debit note</b> (aapne nikala, e.g. damaged goods) claim record karta hai.</p>
+    <div class="notes-grid">
+      <form id="cn-form" class="fgrid fgrid-tight">
+        <div class="fgrid-title">➖ Credit Note</div>
+        <label>Party <select id="cn-party" required></select></label>
+        <label>Note No. <input id="cn-number" type="text" required placeholder="CN-001" /></label>
+        <label>Amount (₹) <input id="cn-amount" type="number" step="0.01" min="0.01" required /></label>
+        <label>Reason <input id="cn-reason" type="text" maxlength="200" placeholder="rate difference" /></label>
+        <button type="submit" class="btn btn-ghost" id="cn-btn">Add Credit Note</button>
+      </form>
+      <form id="dn-form" class="fgrid fgrid-tight">
+        <div class="fgrid-title">➕ Debit Note</div>
+        <label>Party <select id="dn-party" required></select></label>
+        <label>Note No. <input id="dn-number" type="text" required placeholder="DN-001" /></label>
+        <label>Amount (₹) <input id="dn-amount" type="number" step="0.01" min="0.01" required /></label>
+        <label>Reason <input id="dn-reason" type="text" maxlength="200" placeholder="damaged goods" /></label>
+        <button type="submit" class="btn btn-ghost" id="dn-btn">Add Debit Note</button>
+      </form>
+    </div>
+    <div class="result" id="notes-result" hidden></div>
+    <div class="tablewrap"><table class="ftable" id="notes-table">
+      <thead><tr><th>Date</th><th>Type</th><th>Note No.</th><th>Party</th><th>Amount</th><th>Reason</th></tr></thead>
+      <tbody><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ============ PARTIES ============ -->
+  <section class="panel" id="tab-parties" hidden>
+    <div class="panel-head"><h2 class="serif">Party Balances &amp; Ledger</h2><span class="chip">LEDGER</span></div>
+    <p class="panel-sub">Balance = bills − payments − credit notes + debit notes. Kisi bhi party ka poora ledger kholo — date-wise har entry.</p>
+    <div class="tablewrap"><table class="ftable" id="parties-table">
+      <thead><tr><th>Party</th><th>City</th><th>Billed</th><th>Paid</th><th>Credit</th><th>Debit</th><th>Balance</th><th></th></tr></thead>
+      <tbody><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+    <div id="ledger-box" hidden>
+      <div class="panel-head"><h2 class="serif" id="ledger-title">Ledger</h2><button type="button" class="bm-mini" id="ledger-close">Close</button></div>
+      <div class="tablewrap"><table class="ftable" id="ledger-table">
+        <thead><tr><th>Date</th><th>Type</th><th>Ref</th><th>Detail</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </section>
+
+</main>
+
+<script src="/finance.js"></script>
+</body>
+</html>

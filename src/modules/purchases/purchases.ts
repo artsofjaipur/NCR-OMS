@@ -11,6 +11,8 @@ export interface PurchaseEntryInput {
   supplierInvoiceNumber?: string | null;
   invoiceDate?: Date | null;
   adjustmentReason?: string | null;
+  dueDate?: Date | null;
+  notes?: string | null;
   createdByUserId?: number | null;
   items: { skuId: number; quantity: number; unitCost: string }[];
 }
@@ -39,6 +41,16 @@ export async function recordPurchaseEntry(input: PurchaseEntryInput): Promise<{ 
         supplierInvoiceNumber: input.supplierInvoiceNumber ?? null,
         invoiceDate: input.invoiceDate ?? null,
         adjustmentReason: input.adjustmentReason ?? null,
+        // Bill finance (Zoho-style): derive the payable total from the line
+        // items, and carry the due date / notes for aging + ledger views.
+        // Direct stock adjustments carry no supplier bill — total stays NULL so
+        // they never pollute the payable/outstanding numbers.
+        totalAmount:
+          input.source === "PURCHASE_ORDER"
+            ? input.items.reduce((sum, item) => sum + Number(item.unitCost || 0) * item.quantity, 0).toFixed(2)
+            : null,
+        dueDate: input.dueDate ?? null,
+        notes: input.notes ?? null,
         createdByUserId: input.createdByUserId ?? null,
       })
       .returning({ id: purchaseEntries.id });

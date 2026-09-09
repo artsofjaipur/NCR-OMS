@@ -433,8 +433,63 @@ export const purchaseEntries = pgTable("purchase_entries", {
   invoiceDate: timestamp("invoice_date", { withTimezone: true }),
   adjustmentReason: text("adjustment_reason"),
   createdByUserId: integer("created_by_user_id").references(() => users.id),
+  // Finance (Zoho-style bill tracking) — added 2026-09-09. NULL total for
+  // DIRECT_ADJUSTMENT rows that carry no supplier bill.
+  totalAmount: numeric("total_amount", { precision: 12, scale: 2 }),
+  dueDate: timestamp("due_date", { withTimezone: true }),
+  notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// Finance: party payments, credit & debit notes (Zoho Books-inspired)
+// ---------------------------------------------------------------------------
+
+/** Money OUT to a party against purchase bills (or advances) — payment history per party. */
+export const partyPayments = pgTable("party_payments", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  supplierId: integer("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+  purchaseEntryId: integer("purchase_entry_id").references(() => purchaseEntries.id, { onDelete: "set null" }),
+  bankAccountId: integer("bank_account_id").references(() => bankAccounts.id, { onDelete: "set null" }),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  method: varchar("method", { length: 30 }).notNull().default("BANK_TRANSFER"),
+  reference: varchar("reference", { length: 100 }),
+  paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
+  notes: text("notes"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Supplier-issued credit note: reduces what we owe a party (money in our favour). */
+export const creditNotes = pgTable("credit_notes", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  supplierId: integer("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+  purchaseEntryId: integer("purchase_entry_id").references(() => purchaseEntries.id, { onDelete: "set null" }),
+  noteNumber: varchar("note_number", { length: 100 }).notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  reason: text("reason"),
+  noteDate: timestamp("note_date", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  companyNoteNumberUq: uniqueIndex("credit_notes_company_number_uq").on(t.companyId, t.noteNumber),
+}));
+
+/** Debit note we issue against a party: increases/records a receivable claim (e.g. damaged goods). */
+export const debitNotes = pgTable("debit_notes", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  supplierId: integer("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+  purchaseEntryId: integer("purchase_entry_id").references(() => purchaseEntries.id, { onDelete: "set null" } ),
+  noteNumber: varchar("note_number", { length: 100 }).notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  reason: text("reason"),
+  noteDate: timestamp("note_date", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  companyNoteNumberUq: uniqueIndex("debit_notes_company_number_uq").on(t.companyId, t.noteNumber),
+}));
 
 export const purchaseEntryItems = pgTable("purchase_entry_items", {
   id: serial("id").primaryKey(),

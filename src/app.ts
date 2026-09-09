@@ -49,6 +49,7 @@ import { payoutsRouter } from "./routes/payouts";
 import { pnlRouter } from "./routes/pnl";
 import { purchasesRouter } from "./routes/purchases";
 import { suppliersRouter } from "./routes/suppliers";
+import { financeRouter } from "./routes/finance";
 import { dashboardRouter } from "./routes/dashboard";
 
 import {
@@ -130,6 +131,10 @@ export function createApp(): Express {
   app.get("/scan", (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "scan.html"));
   });
+  // Finance (Zoho Books-style money view): bills, payouts, payments, notes.
+  app.get("/finance", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "finance.html"));
+  });
 
   // API Routes
   // Fixed by Claude (Anthropic): mounted at both the bare path and the
@@ -149,6 +154,7 @@ export function createApp(): Express {
     ["/pnl", pnlRouter],
     ["/purchases", purchasesRouter],
     ["/suppliers", suppliersRouter],
+    ["/finance", financeRouter],
     ["/dashboard", dashboardRouter],
   ];
   for (const [path, router] of routeMounts) {

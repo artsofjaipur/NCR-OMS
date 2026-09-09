@@ -15,6 +15,13 @@
       "when": 1788933910912,
       "tag": "0001_add_password_reset_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788954026684,
+      "tag": "0002_tired_whiplash",
+      "breakpoints": true
     }
   ]
 }
