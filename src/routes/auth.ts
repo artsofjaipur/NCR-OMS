@@ -6,6 +6,7 @@ import { db } from "../db/client";
 import { companies, users, warehouses } from "../db/schema";
 import { verifyPassword, hashPassword } from "../security/password";
 import { signSession } from "../security/jwt";
+import { resolveSections } from "../security/permissions";
 import { HttpError } from "../middleware/errorHandler";
 
 export const authRouter = Router();
@@ -113,7 +114,21 @@ authRouter.post("/login", async (req, res, next) => {
     }
 
     const token = signSession({ userId: user.id, companyId: user.companyId, role: user.role });
-    res.json({ token, companyId: user.companyId, role: user.role });
+    // Frontend drives section visibility from these grants (OWNER/ADMIN get
+    // everything; other roles use stored permissions or role defaults).
+    const [company] = await db
+      .select({ displayName: companies.displayName })
+      .from(companies)
+      .where(eq(companies.id, user.companyId))
+      .limit(1);
+    res.json({
+      token,
+      companyId: user.companyId,
+      role: user.role,
+      displayName: user.displayName,
+      companyName: company?.displayName ?? null,
+      permissions: await resolveSections({ session: { userId: user.id, role: user.role } } as never),
+    });
   } catch (err) {
     next(err);
   }

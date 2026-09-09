@@ -4,12 +4,13 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { returns, orders, orderItems, marketplaceAccounts, brands, skus } from "../db/schema";
 import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
+import { requireSection } from "../security/permissions";
 import { HttpError } from "../middleware/errorHandler";
 import { initiateReturn, markReturnReceived, recordQcResult, restockReturn } from "../modules/returns/returns";
 import { parseCsvToRecords } from "../ingestion/csv";
 
 export const returnsRouter = Router();
-returnsRouter.use(requireAuth, requireCompanyScope);
+returnsRouter.use(requireAuth, requireCompanyScope, requireSection("returns"));
 
 const initiateSchema = z.object({
   orderId: z.number().int().positive(),

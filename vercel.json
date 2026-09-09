@@ -46,5 +46,19 @@
       "destination": "/api" },
     { "source": "/suppliers/:path*",
       "destination": "/api" },
+    { "source": "/finance",
+      "destination": "/api" },
+    { "source": "/finance/:path*",
+      "destination": "/api" },
+    { "source": "/users/:path*",
+      "destination": "/api" },
+    { "source": "/reports",
+      "destination": "/api" },
+    { "source": "/reports/:path*",
+      "destination": "/api" },
+    { "source": "/entry/:path*",
+      "destination": "/api" },
+    { "source": "/dashboard",
+      "destination": "/api" }
   ]
 }

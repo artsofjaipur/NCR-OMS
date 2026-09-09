@@ -4,6 +4,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "../db/client";
 import { orders, marketplaceAccounts, brands } from "../db/schema";
 import { requireAuth, requireCompanyScope } from "../middleware/auth";
+import { requireSection } from "../security/permissions";
 import { HttpError } from "../middleware/errorHandler";
 import { parseFlipkartExport } from "../ingestion/parsers/flipkart";
 import { parseMeeshoExport } from "../ingestion/parsers/meesho";
@@ -12,7 +13,7 @@ import { ingestOrder, UnmappedSkuError } from "../modules/orders/ingest";
 import { InsufficientStockError } from "../modules/inventory/ledger";
 
 export const ordersRouter = Router();
-ordersRouter.use(requireAuth, requireCompanyScope);
+ordersRouter.use(requireAuth, requireCompanyScope, requireSection("orders"));
 
 const PARSERS = {
   flipkart: parseFlipkartExport,

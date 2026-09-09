@@ -174,12 +174,12 @@ companiesRouter.delete("/me/brands/:id", requireRole("OWNER", "ADMIN"), async (r
   }
 });
 
-/** Deactivate (or re-activate) a seller account — never hard-delete: order history hangs off it. */
+/** Rename a seller account (label only — marketplace identity never changes). */
 companiesRouter.patch("/me/marketplace-accounts/:id", requireRole("OWNER", "ADMIN"), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, "Invalid account id");
-    const body = z.object({ isActive: z.boolean() }).parse(req.body);
+    const parsed = z.object({ sellerAccountLabel: z.string().trim().min(1).max(150).optional(), isActive: z.boolean().optional() }).parse(req.body);
     const [account] = await db
       .select({ brandId: marketplaceAccounts.brandId })
       .from(marketplaceAccounts)
@@ -192,7 +192,11 @@ companiesRouter.patch("/me/marketplace-accounts/:id", requireRole("OWNER", "ADMI
       .where(and(eq(brands.id, account.brandId), eq(brands.companyId, req.session!.companyId)))
       .limit(1);
     if (!owned) throw new HttpError(403, "Account does not belong to your company");
-    await db.update(marketplaceAccounts).set({ isActive: body.isActive }).where(eq(marketplaceAccounts.id, id));
+    const patch: Record<string, unknown> = {};
+    if (parsed.sellerAccountLabel !== undefined) patch.sellerAccountLabel = parsed.sellerAccountLabel;
+    if (parsed.isActive !== undefined) patch.isActive = parsed.isActive;
+    if (Object.keys(patch).length === 0) return res.status(204).end();
+    await db.update(marketplaceAccounts).set(patch).where(eq(marketplaceAccounts.id, id));
     res.status(204).end();
   } catch (err) {
     next(err);

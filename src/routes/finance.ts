@@ -13,11 +13,12 @@ import {
   suppliers,
   users,
 } from "../db/schema";
+import { requireSection } from "../security/permissions";
 import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
 import { HttpError } from "../middleware/errorHandler";
 
 export const financeRouter = Router();
-financeRouter.use(requireAuth, requireCompanyScope);
+financeRouter.use(requireAuth, requireCompanyScope, requireSection("finance"));
 
 /** Drizzle wraps pg errors in DrizzleQueryError — the pg code lives on `cause`. */
 function isUniqueViolation(e: unknown): boolean {
@@ -292,6 +293,54 @@ financeRouter.post("/payments", requireRole("OWNER", "ADMIN"), async (req, res, 
   }
 });
 
+/** Delete a payment (typo fix) — balances recompute from what remains. */
+financeRouter.delete("/payments/:id", requireRole("OWNER", "ADMIN"), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, "Invalid payment id");
+    const [owned] = await db
+      .select({ id: partyPayments.id })
+      .from(partyPayments)
+      .where(and(eq(partyPayments.id, id), eq(partyPayments.companyId, req.session!.companyId)))
+      .limit(1);
+    if (!owned) throw new HttpError(404, "Payment not found");
+    await db.delete(partyPayments).where(eq(partyPayments.id, id));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Edit a bill's due date / notes / invoice number (total stays item-derived). */
+financeRouter.patch("/bills/:id", requireRole("OWNER", "ADMIN"), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, "Invalid bill id");
+    const body = z
+      .object({
+        dueDate: z.string().datetime().nullable().optional(),
+        notes: z.string().max(500).nullable().optional(),
+        supplierInvoiceNumber: z.string().trim().max(100).nullable().optional(),
+      })
+      .parse(req.body);
+    const [owned] = await db
+      .select({ id: purchaseEntries.id })
+      .from(purchaseEntries)
+      .where(and(eq(purchaseEntries.id, id), eq(purchaseEntries.companyId, req.session!.companyId)))
+      .limit(1);
+    if (!owned) throw new HttpError(404, "Bill not found");
+    const patch: Record<string, unknown> = {};
+    if (body.dueDate !== undefined) patch.dueDate = body.dueDate ? new Date(body.dueDate) : null;
+    if (body.notes !== undefined) patch.notes = body.notes;
+    if (body.supplierInvoiceNumber !== undefined) patch.supplierInvoiceNumber = body.supplierInvoiceNumber;
+    if (Object.keys(patch).length === 0) return res.status(204).end();
+    await db.update(purchaseEntries).set(patch).where(eq(purchaseEntries.id, id));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
 /* ---------------------------------------------------------------------------
  * CREDIT / DEBIT NOTES — adjustments against parties
  * ------------------------------------------------------------------------- */
@@ -359,6 +408,26 @@ financeRouter.post("/notes/credit", requireRole("OWNER", "ADMIN"), async (req, r
       }
       throw e;
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Delete a credit or debit note (typo fix) — party balance recomputes. */
+financeRouter.delete("/notes/:type/:id", requireRole("OWNER", "ADMIN"), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const type = req.params.type === "debit" ? "debit" : "credit";
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, "Invalid note id");
+    const table = type === "debit" ? debitNotes : creditNotes;
+    const [owned] = await db
+      .select({ id: table.id })
+      .from(table)
+      .where(and(eq(table.companyId, req.session!.companyId), eq(table.id, id)))
+      .limit(1);
+    if (!owned) throw new HttpError(404, "Note not found");
+    await db.delete(table).where(eq(table.id, id));
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

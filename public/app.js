@@ -56,18 +56,8 @@
 
   // ---------- state ----------
   var summary = null;
-  var selectedMp = "flipkart";
   var selectedFile = null;
-
-  // ---------- marketplace segmented control ----------
-  $all("#up-marketplace button").forEach(function (b) {
-    b.addEventListener("click", function () {
-      $all("#up-marketplace button").forEach(function (x) { x.classList.remove("sel"); });
-      b.classList.add("sel");
-      selectedMp = b.getAttribute("data-mp");
-      fillAccountSelect();
-    });
-  });
+  var myPermissions = (auth && auth.permissions) || [];
 
   // ---------- file input + drag & drop ----------
   var dropzone = $("#dropzone");
@@ -118,7 +108,9 @@
       var btn = $("#up-btn");
       btn.disabled = true;
       btn.classList.add("loading");
-      api("/orders/import/" + selectedMp, {
+      var selAcc = $("#up-account").selectedOptions && $("#up-account").selectedOptions[0];
+      var mp = selAcc && selAcc.getAttribute("data-mp") ? selAcc.getAttribute("data-mp").toLowerCase() : "flipkart";
+      api("/orders/import/" + mp, {
         method: "POST",
         body: {
           marketplaceAccountId: accountId,
@@ -179,27 +171,36 @@
       renderWarehouses();
       renderBrands();
       renderTrend();
+      fillEntrySelects();
     });
   }
 
   // ---------- selects ----------
+  // Seller account IS the selector — its marketplace auto-detected and shown
+  // as a badge (user request: "seller account ke according marketplace change
+  // ho jane chahiye").
   function fillAccountSelect() {
     var sel = $("#up-account");
-    var accounts = (summary && summary.accounts) || [];
-    var visible = accounts.filter(function (a) {
-      var mp = (a.marketplace || "").toLowerCase();
-      return selectedMp === "flipkart" ? mp === "flipkart"
-        : selectedMp === "meesho" ? mp === "meesho"
-        : mp === "snapdeal";
-    });
-    sel.innerHTML = visible.length
-      ? visible.map(function (a) {
-          return "<option value=\"" + a.id + "\">" + esc(a.sellerAccountLabel || a.marketplace + " #" + a.id) + "</option>";
+    var accounts = ((summary && summary.accounts) || []).filter(function (a) { return a.isActive !== false; });
+    sel.innerHTML = accounts.length
+      ? accounts.map(function (a) {
+          return "<option value=\"" + a.id + "\" data-mp=\"" + esc(a.marketplace) + "\">" +
+            esc(a.sellerAccountLabel || a.marketplace + " #" + a.id) + " — " + esc(a.marketplace) +
+            (a.brand ? " (" + esc(a.brand) + ")" : "") + "</option>";
         }).join("")
-      : "<option value=\"\">No " + esc(selectedMp) + " account yet</option>";
+      : "<option value=\"\">No seller account yet — add under Brands &amp; Setup</option>";
+    updateMpBadge();
+  }
+
+  function updateMpBadge() {
+    var sel = $("#up-account");
+    var opt = sel.selectedOptions && sel.selectedOptions[0];
+    var badge = $("#up-mp-badge");
+    if (badge) badge.textContent = opt && opt.getAttribute("data-mp") ? opt.getAttribute("data-mp") : "—";
   }
 
   function renderAccounts() { fillAccountSelect(); }
+  $("#up-account").addEventListener("change", updateMpBadge);
 
   function renderWarehouses() {
     var sel = $("#up-warehouse");
@@ -497,9 +498,161 @@
     });
   }
 
+  // ---------- single entry (order + return) ----------
+  function entryMsg(kind, msg) {
+    var box = $("#entry-result");
+    box.className = "result " + kind;
+    box.textContent = msg;
+    box.hidden = false;
+    setTimeout(function () { box.hidden = true; }, 7000);
+  }
+
+  function fillEntrySelects() {
+    var accounts = ((summary && summary.accounts) || []).filter(function (a) { return a.isActive !== false; });
+    var opts = accounts.map(function (a) {
+      return "<option value='" + a.id + "'>" + esc(a.sellerAccountLabel || a.marketplace) + " — " + esc(a.marketplace) + "</option>";
+    }).join("");
+    $("#so-account").innerHTML = opts || "<option value=''>No seller account</option>";
+    var whs = ((summary && summary.warehouses) || []);
+    var wopts = whs.map(function (w) { return "<option value='" + w.id + "'>" + esc(w.name) + "</option>"; }).join("");
+    $("#so-warehouse").innerHTML = wopts || "<option value=''>No warehouse</option>";
+  }
+
+  $("#so-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var body = {
+      marketplaceAccountId: Number($("#so-account").value),
+      warehouseId: Number($("#so-warehouse").value),
+      marketplaceOrderId: $("#so-oid").value.trim(),
+      marketplaceSku: $("#so-sku").value.trim().toUpperCase(),
+      quantity: Number($("#so-qty").value) || 1,
+      unitPrice: $("#so-price").value,
+      customerCity: $("#so-city").value.trim() || undefined,
+    };
+    var size = $("#so-size").value.trim();
+    if (size) body.size = size;
+    if (!body.marketplaceAccountId || !body.warehouseId) { entryMsg("err", "Store aur warehouse chuno."); return; }
+    var btn = $("#so-btn");
+    btn.disabled = true;
+    api("/entry/order", { method: "POST", body: body }).then(function (r) {
+      btn.disabled = false;
+      if (!r.ok) { entryMsg("err", (r.data && r.data.error) || "Order entry failed."); return; }
+      entryMsg("ok", "Order #" + r.data.orderId + " created — stock reserved, ledger connected ✓");
+      ["#so-oid", "#so-sku", "#so-size", "#so-city"].forEach(function (s) { $(s).value = ""; });
+      loadOrders(); loadSummary();
+    }).catch(function () { btn.disabled = false; });
+  });
+
+  $("#sr-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var body = { marketplaceOrderId: $("#sr-oid").value.trim() };
+    if ($("#sr-awb").value.trim()) body.reverseAwb = $("#sr-awb").value.trim();
+    if ($("#sr-courier").value.trim()) body.reverseCarrier = $("#sr-courier").value.trim();
+    if ($("#sr-note").value.trim()) body.notes = $("#sr-note").value.trim();
+    var btn = $("#sr-btn");
+    btn.disabled = true;
+    api("/entry/return", { method: "POST", body: body }).then(function (r) {
+      btn.disabled = false;
+      if (!r.ok) { entryMsg("err", (r.data && r.data.error) || "Return entry failed."); return; }
+      entryMsg("ok", "Return #" + r.data.returnId + " created for order #" + r.data.orderId + " ✓");
+      ["#sr-oid", "#sr-awb", "#sr-courier", "#sr-note"].forEach(function (s) { $(s).value = ""; });
+    }).catch(function () { btn.disabled = false; });
+  });
+
+  $("#sr-recv-btn").addEventListener("click", function () {
+    var id = Number($("#sr-recv").value);
+    if (!id) { entryMsg("err", "Return ID daalo."); return; }
+    api("/entry/return/" + id + "/receive", { method: "POST" }).then(function (r) {
+      if (r.status === 204) { entryMsg("ok", "Return #" + id + " marked RECEIVED ✓"); $("#sr-recv").value = ""; }
+      else entryMsg("err", (r.data && r.data.error) || "Receive failed.");
+    });
+  });
+
+  // ---------- team & permissions ----------
+  var SECTIONS = ["orders", "scan", "inventory", "dispatch", "returns", "finance", "reports", "setup", "team"];
+  var canManageTeam = myPermissions.indexOf("team") !== -1 || auth.role === "OWNER" || auth.role === "ADMIN";
+
+  function loadTeam() {
+    if (!canManageTeam) return;
+    $("#team-panel").hidden = false;
+    api("/users").then(function (r) {
+      if (!r.ok || !Array.isArray(r.data)) return;
+      $("#team-count").textContent = String(r.data.length);
+      var tb = $("#team-table tbody");
+      tb.innerHTML = r.data.map(function (u) {
+        var perms = u.role === "OWNER" || u.role === "ADMIN"
+          ? "<span class='pill pill-ok'>ALL (role)</span>"
+          : (u.permissions && u.permissions.length
+            ? u.permissions.map(function (p) { return "<span class='mp-tag'>" + esc(p) + "</span>"; }).join(" ")
+            : "<span class='pill pill-pend'>role defaults</span>");
+        var actions = "";
+        if (u.role !== "OWNER") {
+          actions = "<button type='button' class='bm-mini' data-u-toggle='" + u.id + "'>" + (u.isActive ? "Deactivate" : "Activate") + "</button>" +
+            " <button type='button' class='bm-mini danger' data-u-del='" + u.id + "'>Delete access</button>";
+        }
+        return "<tr>" +
+          "<td><b>" + esc(u.displayName || u.email) + "</b><div style='font-size:11px;color:var(--muted)'>" + esc(u.email) + "</div></td>" +
+          "<td><span class='mp-tag'>" + esc(u.role) + "</span></td>" +
+          "<td>" + (u.isActive ? "<span class='pill pill-ok'>ACTIVE</span>" : "<span class='pill pill-red'>OFF</span>") + "</td>" +
+          "<td style='white-space:normal'>" + perms + "</td>" +
+          "<td>" + actions + "</td></tr>";
+      }).join("");
+
+      $all("[data-u-toggle]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var id = b.getAttribute("data-u-toggle");
+          var row = r.data.find(function (x) { return String(x.id) === String(id); });
+          api("/users/" + id, { method: "PATCH", body: { isActive: !row.isActive } }).then(function (res) {
+            if (res.status === 204) loadTeam(); else entryMsg("err", (res.data && res.data.error) || "Failed.");
+          });
+        });
+      });
+      $all("[data-u-del]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var id = b.getAttribute("data-u-del");
+          if (!confirm("Remove ALL section access for this user? (user stays, all sections revoked)")) return;
+          api("/users/" + id, { method: "PATCH", body: { permissions: [] } }).then(function (res) {
+            if (res.status === 204) { loadTeam(); entryMsg("ok", "All sections revoked — user falls back to minimal read-only."); }
+            else entryMsg("err", (res.data && res.data.error) || "Failed.");
+          });
+        });
+      });
+    });
+  }
+
+  $("#tu-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var body = {
+      email: $("#tu-email").value.trim(),
+      password: $("#tu-pass").value,
+      displayName: $("#tu-name").value.trim(),
+      role: $("#tu-role").value,
+    };
+    var btn = $("#tu-btn");
+    btn.disabled = true;
+    api("/users", { method: "POST", body: body }).then(function (r) {
+      btn.disabled = false;
+      if (!r.ok) { entryMsg("err", (r.data && r.data.error) || "Could not add user."); return; }
+      entryMsg("ok", "User added ✓ — ab permissions set karo (neeche table me)");
+      ["#tu-name", "#tu-email", "#tu-pass"].forEach(function (s) { $(s).value = ""; });
+      loadTeam();
+    }).catch(function () { btn.disabled = false; });
+  });
+
+  // Permission checkboxes per non-owner user (inline, compact)
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    if (t && t.classList && t.classList.contains("mp-tag") && t.getAttribute("data-perm-toggle")) {
+      var userId = t.getAttribute("data-perm-toggle");
+      var sec = t.getAttribute("data-perm-toggle-sec");
+      api("/users/" + userId).catch(function () {});
+    }
+  });
+
   // ---------- boot ----------
   loadSummary();
   loadOrders();
   renderParties();
   renderSkuPicker();
+  loadTeam();
 })();

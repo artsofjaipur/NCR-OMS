@@ -115,6 +115,10 @@ export const users = pgTable(
     role: userRoleEnum("role").notNull().default("OPS"),
     displayName: varchar("display_name", { length: 150 }),
     isActive: boolean("is_active").notNull().default(true),
+    // Fine-grained section access, managed by OWNER/ADMIN (2026-09-09). null
+    // means "defaults by role" — the middleware expands it. OWNER/ADMIN are
+    // always full-access regardless of the stored value.
+    permissions: jsonb("permissions").$type<string[]>(),
     // Self-serve password reset (added 2026-09-09): a short-lived single-use
     // token hash + expiry, filled by POST /auth/forgot-password and consumed
     // by POST /auth/reset-password. Kept on users so no extra table is needed.

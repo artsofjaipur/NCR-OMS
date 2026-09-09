@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
 </head>
 <body>
 
@@ -21,8 +22,9 @@
   <div class="tb-right">
     <span class="tb-company" id="tb-company"></span>
     <span class="tb-role" id="tb-role"></span>
-    <a href="/scan" class="tb-logout" style="text-decoration:none">📦 Scan Station</a>
+    <a href="/scan" class="tb-logout" style="text-decoration:none">📦 Scan</a>
     <a href="/finance" class="tb-logout" style="text-decoration:none">💰 Finance</a>
+    <a href="/reports" class="tb-logout" style="text-decoration:none">📊 Reports</a>
     <button id="logout-btn" class="tb-logout" type="button">Logout</button>
   </div>
 </header>
@@ -70,21 +72,14 @@
 
       <form id="upload-form">
         <div class="form-row">
-          <label for="up-marketplace">MARKETPLACE</label>
-          <div class="seg" id="up-marketplace">
-            <button type="button" data-mp="flipkart" class="sel">Flipkart</button>
-            <button type="button" data-mp="meesho">Meesho</button>
-            <button type="button" data-mp="snapdeal">Snapdeal</button>
-          </div>
+          <label for="up-account">SELLER ACCOUNT <span id="up-mp-badge" class="pill pill-ok" style="margin-left:6px">—</span></label>
+          <select id="up-account" required>
+            <option value="">Loading accounts…</option>
+          </select>
+          <p class="panel-sub small" style="margin-top:6px">Marketplace seller account se auto-detect hota hai — bas account chuno, apna CSV daalo.</p>
         </div>
 
-        <div class="form-row two">
-          <div>
-            <label for="up-account">SELLER ACCOUNT</label>
-            <select id="up-account" required>
-              <option value="">Loading accounts…</option>
-            </select>
-          </div>
+        <div class="form-row">
           <div>
             <label for="up-warehouse">WAREHOUSE</label>
             <select id="up-warehouse" required>
@@ -196,6 +191,66 @@
           <div id="setup-result" class="result" hidden></div>
         </div>
       </details>
+    </section>
+
+    <!-- ==================== SINGLE ENTRY ==================== -->
+    <section class="panel wide">
+      <div class="panel-head">
+        <h2 class="serif">Single Entry</h2>
+        <span class="chip chip-dim">MANUAL ONE-OFF</span>
+      </div>
+      <p class="panel-sub">Ek-ek entry bina CSV ke — order ya return. Stock, ledger, brand, store — sab auto-connect hota hai.</p>
+      <div class="notes-grid">
+        <form id="so-form" class="fgrid fgrid-tight">
+          <div class="fgrid-title">＋ New Order (single)</div>
+          <label>Store <select id="so-account" required></select></label>
+          <label>Warehouse <select id="so-warehouse" required></select></label>
+          <label>Order ID <input id="so-oid" type="text" required placeholder="MKTP-12345" /></label>
+          <label>SKU (code) <input id="so-sku" type="text" required placeholder="VDM-001" style="text-transform:uppercase" /></label>
+          <label>Size <input id="so-size" type="text" placeholder="XL" /></label>
+          <label>Qty <input id="so-qty" type="number" min="1" value="1" required /></label>
+          <label>Price (₹) <input id="so-price" type="number" min="0" step="0.01" required placeholder="1299.00" /></label>
+          <label>City <input id="so-city" type="text" placeholder="Jaipur" /></label>
+          <button type="submit" class="btn" id="so-btn">Create Order</button>
+        </form>
+        <form id="sr-form" class="fgrid fgrid-tight">
+          <div class="fgrid-title">↩ New Return (single)</div>
+          <label>Order ID <input id="sr-oid" type="text" required placeholder="Order ID jo return hua" /></label>
+          <label>Reverse AWB <input id="sr-awb" type="text" placeholder="optional" /></label>
+          <label>Courier <input id="sr-courier" type="text" placeholder="optional" /></label>
+          <label>Note <input id="sr-note" type="text" placeholder="reason / remark" /></label>
+          <button type="submit" class="btn ghostbtn2" id="sr-btn">Create Return</button>
+          <label style="grid-column:1/-1">Receive return by ID <input id="sr-recv" type="number" min="1" placeholder="return id" /></label>
+          <button type="button" class="btn ghostbtn2" id="sr-recv-btn">Mark Received</button>
+        </form>
+      </div>
+      <div id="entry-result" class="result" hidden></div>
+    </section>
+
+    <!-- ==================== TEAM & PERMISSIONS ==================== -->
+    <section class="panel wide" id="team-panel" hidden>
+      <div class="panel-head">
+        <h2 class="serif">Team &amp; Permissions</h2>
+        <span class="chip chip-dim" id="team-count">0</span>
+      </div>
+      <p class="panel-sub">Owner/Admin decide karenge kis user ko kaunsa section milega. Roles ke defaults bhi hain; per-user overrides neeche.</p>
+      <form id="tu-form" class="fgrid">
+        <label>Name <input id="tu-name" type="text" required placeholder="Ramesh Kumar" /></label>
+        <label>Email <input id="tu-email" type="email" required placeholder="ramesh@company.com" /></label>
+        <label>Password <input id="tu-pass" type="password" required minlength="8" placeholder="min 8 chars" /></label>
+        <label>Role
+          <select id="tu-role">
+            <option value="OPS">OPS (operations)</option>
+            <option value="ADMIN">ADMIN</option>
+            <option value="VIEWER">VIEWER (read-only)</option>
+          </select>
+        </label>
+        <button type="submit" class="btn" id="tu-btn">＋ Add User</button>
+      </form>
+      <div class="tablewrap"><table class="ftable" id="team-table">
+        <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Sections</th><th></th></tr></thead>
+        <tbody><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table></div>
     </section>
 
     <!-- ==================== RECENT ORDERS ==================== -->

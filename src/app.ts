@@ -50,6 +50,9 @@ import { pnlRouter } from "./routes/pnl";
 import { purchasesRouter } from "./routes/purchases";
 import { suppliersRouter } from "./routes/suppliers";
 import { financeRouter } from "./routes/finance";
+import { usersRouter } from "./routes/users";
+import { reportsRouter } from "./routes/reports";
+import { entryRouter } from "./routes/entry";
 import { dashboardRouter } from "./routes/dashboard";
 
 import {
@@ -135,6 +138,10 @@ export function createApp(): Express {
   app.get("/finance", (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "finance.html"));
   });
+  // Reports: turnover, P&L, balance sheet, expenses, store fees.
+  app.get("/reports", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "reports.html"));
+  });
 
   // API Routes
   // Fixed by Claude (Anthropic): mounted at both the bare path and the
@@ -155,6 +162,9 @@ export function createApp(): Express {
     ["/purchases", purchasesRouter],
     ["/suppliers", suppliersRouter],
     ["/finance", financeRouter],
+    ["/users", usersRouter],
+    ["/reports", reportsRouter],
+    ["/entry", entryRouter],
     ["/dashboard", dashboardRouter],
   ];
   for (const [path, router] of routeMounts) {

@@ -4,11 +4,12 @@ import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { db } from "../db/client";
 import { orders, shipments, marketplaceAccounts, brands } from "../db/schema";
 import { requireAuth, requireCompanyScope } from "../middleware/auth";
+import { requireSection } from "../security/permissions";
 import { HttpError } from "../middleware/errorHandler";
 import { markShipmentPacked } from "../modules/dispatch/dailyDispatch";
 
 export const dispatchRouter = Router();
-dispatchRouter.use(requireAuth, requireCompanyScope);
+dispatchRouter.use(requireAuth, requireCompanyScope, requireSection("dispatch"));
 
 dispatchRouter.get("/picklist/:brandId", async (req, res, next) => {
   try {

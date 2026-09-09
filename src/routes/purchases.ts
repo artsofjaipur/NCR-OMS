@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireCompanyScope } from "../middleware/auth";
+import { requireSection } from "../security/permissions";
 import { recordPurchaseEntry } from "../modules/purchases/purchases";
 
 export const purchasesRouter = Router();
-purchasesRouter.use(requireAuth, requireCompanyScope);
+purchasesRouter.use(requireAuth, requireCompanyScope, requireSection("inventory"));
 
 const schema = z.object({
   warehouseId: z.number().int().positive(),

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reports — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Reports</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- ==================== KPI STRIP ==================== -->
+  <section class="kpis kpis-4">
+    <div class="kpi">
+      <div class="kpi-label">Turnover (GMV)</div>
+      <div class="kpi-value" id="k-gmv">—</div>
+      <div class="kpi-sub" id="k-gmv-sub">period</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Payout Received</div>
+      <div class="kpi-value" id="k-recv">—</div>
+      <div class="kpi-sub" id="k-recv-sub">store fees cut hoke</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Gross Profit</div>
+      <div class="kpi-value" id="k-gross">—</div>
+      <div class="kpi-sub">received − purchases</div>
+    </div>
+    <div class="kpi kpi-warn">
+      <div class="kpi-label">Net Profit</div>
+      <div class="kpi-value" id="k-net">—</div>
+      <div class="kpi-sub" id="k-net-sub">gross − expenses</div>
+    </div>
+  </section>
+
+  <!-- ==================== TABS ==================== -->
+  <div class="tabs" role="tablist">
+    <button type="button" class="sel" data-tab="pnl">📉 Profit &amp; Loss</button>
+    <button type="button" data-tab="turnover">🔄 Turnover</button>
+    <button type="button" data-tab="balance">⚖ Balance Sheet</button>
+    <button type="button" data-tab="expenses">🧮 Expenses</button>
+    <button type="button" data-tab="fees">🏪 Store Fees</button>
+  </div>
+
+  <!-- ============ P&L ============ -->
+  <section class="panel" id="tab-pnl">
+    <div class="panel-head"><h2 class="serif">Profit &amp; Loss</h2><span class="chip">PERIOD</span></div>
+    <p class="panel-sub">Sab interconnected: GMV → payouts (store fees cut) → party bills → expenses → net profit.</p>
+    <div class="tablewrap"><table class="ftable" id="pnl-table">
+      <thead><tr><th>Line</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody><tr><td colspan="2" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ============ TURNOVER ============ -->
+  <section class="panel" id="tab-turnover" hidden>
+    <div class="panel-head"><h2 class="serif">Turnover — last 90 days</h2><span class="chip">GMV</span></div>
+    <p class="panel-sub">Din-wise GMV chart + brand-wise aur store-wise split. Kis brand/store se kitna bikri hui.</p>
+    <div class="cf-chart" id="to-chart"></div>
+    <div class="grid" style="margin-top:16px">
+      <section class="panel"><div class="panel-head"><h2 class="serif" style="font-size:17px">Brand-wise</h2></div>
+        <div class="tablewrap"><table class="ftable" id="to-brands">
+          <thead><tr><th>Brand</th><th>Orders</th><th style="text-align:right">GMV</th></tr></thead>
+          <tbody></tbody></table></div>
+      </section>
+      <section class="panel"><div class="panel-head"><h2 class="serif" style="font-size:17px">Store-wise</h2></div>
+        <div class="tablewrap"><table class="ftable" id="to-stores">
+          <thead><tr><th>Store</th><th>Marketplace</th><th>Orders</th><th style="text-align:right">GMV</th></tr></thead>
+          <tbody></tbody></table></div>
+      </section>
+    </div>
+  </section>
+
+  <!-- ============ BALANCE ============ -->
+  <section class="panel" id="tab-balance" hidden>
+    <div class="panel-head"><h2 class="serif">Balance Sheet</h2><span class="chip">LIVE</span></div>
+    <p class="panel-sub">Duniya jo humse owe karti hai (pending store payouts) vs jo hum owe karte hain (party balance).</p>
+    <div class="tablewrap"><table class="ftable" id="bal-table">
+      <thead><tr><th>Side</th><th>Component</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ============ EXPENSES ============ -->
+  <section class="panel" id="tab-expenses" hidden>
+    <div class="panel-head"><h2 class="serif">Expenses</h2><span class="chip chip-dim" id="exp-count">0</span></div>
+    <p class="panel-sub">Overhead entries — rent, ads, packaging, salary. P&L me seedha katta hai. Edit/Delete inline.</p>
+    <form id="exp-form" class="fgrid">
+      <label>Category <input id="exp-cat" type="text" required placeholder="Ads / Rent / Salary…" /></label>
+      <label>Amount (₹) <input id="exp-amount" type="number" min="0.01" step="0.01" required /></label>
+      <label>Date <input id="exp-date" type="date" /></label>
+      <label>Note <input id="exp-note" type="text" placeholder="optional" /></label>
+      <button type="submit" class="btn" id="exp-btn">＋ Add Expense</button>
+    </form>
+    <div class="result" id="exp-result" hidden></div>
+    <div class="tablewrap"><table class="ftable" id="exp-table">
+      <thead><tr><th>Date</th><th>Category</th><th>Brand</th><th>Note</th><th style="text-align:right">Amount</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ============ STORE FEES ============ -->
+  <section class="panel" id="tab-fees" hidden>
+    <div class="panel-head"><h2 class="serif">Store Fees</h2><span class="chip">DEDUCTIONS</span></div>
+    <p class="panel-sub">Expected payout vs actually received — ka store kitna commission/shipping kaata, batch-wise.</p>
+    <div class="tablewrap"><table class="ftable" id="fees-table">
+      <thead><tr><th>Store</th><th>Marketplace</th><th>Expected</th><th>Received</th><th style="text-align:right">Fee (cut)</th><th>Date</th><th>Status</th></tr></thead>
+      <tbody><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+</main>
+
+<script src="/reports.js"></script>
+</body>
+</html>

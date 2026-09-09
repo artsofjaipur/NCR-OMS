@@ -3,11 +3,12 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { skus, brands, marketplaceSkuMap, marketplaceAccounts } from "../db/schema";
+import { requireSection } from "../security/permissions";
 import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
 import { HttpError } from "../middleware/errorHandler";
 
 export const skusRouter = Router();
-skusRouter.use(requireAuth, requireCompanyScope);
+skusRouter.use(requireAuth, requireCompanyScope, requireSection("inventory"));
 
 /** SKU list, always scoped to the caller's company (join brands for the filter). */
 skusRouter.get("/", async (req, res, next) => {
