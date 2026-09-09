@@ -2,7 +2,7 @@
   "version": 2,
   "rewrites": [
     { "source": "/",
-      "destination": "/index.html" },
+      "destination": "/api" },
     { "source": "/login",
       "destination": "/api" },
     { "source": "/create-account",
