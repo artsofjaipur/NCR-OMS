@@ -20,6 +20,20 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-09] — Left sidebar navigation + Virtual Assistant (alerts + Hinglish Q&A) — **by Buffy (Codebuff)**
+- **User request:** left menu bar with all masters (orders, returns, finance, company setup, party master…), profile-based visibility, aur ek virtual assistant jo OMS ke saath "flart" (alert) karta rahe.
+- **Sidebar (`public/nav.css` + `public/nav.js`, injected on /app, /finance, /reports, /scan):**
+  - Dark gold-themed fixed left nav: Operations menu (Orders, Scan Station, Inventory, Reports, Finance, Returns), Masters (Company & Setup, Party Master, Single Entry, Team & Roles), profile block at bottom (avatar initials, role, company name, Dashboard/Logout).
+  - **Permission-filtered:** items render only if the user's role/sections allow — mirroring backend ROLE_DEFAULTS client-side (OWNER/ADMIN see everything). In-page links scroll to the target panel on /app (Setup opens the details, Team un-hides the panel). Mobile: burger button + slide-in.
+- **Virtual Assistant (`src/routes/assistant.ts` + widget in nav.js):**
+  - `GET /assistant/alerts` — live company-scoped KPIs: dispatch-pending count, payouts awaited (₹), open returns, low-stock SKUs (≤5 units via inventory ledger sum). Rendered as red badge on the floating 🤖 FAB + alert banner list inside the chat panel; auto-refreshes every 60s.
+  - `POST /assistant/query {question}` — deterministic Hinglish intent engine over the same company-scoped scope used by the dashboard (brands→marketplaceAccounts→orders, orderItems.invoiceAmount for value): aaj ke orders, pending dispatch, payout status, party bills (top-5 by total), returns, low stock list, brand-wise sales, P&L pointer, help. Unknown questions fall back to a helpful chip list; when `AI_GATEWAY_API_KEY` is set (Vercel AI Gateway, gpt-4o-mini), low-confidence questions get AI enrichment with the live stats as context (15s timeout, silent fallback).
+  - Widget UI: chat bubbles, 6 quick chips ("aaj ke orders"…), Enter-to-send, close/open FAB.
+- **Wiring:** assistantRouter mounted bare + /api in `src/app.ts`; `/assistant/:path*` rewrite in `vercel.json`.
+- **Verification (real DB, 15/15 pass):** alerts shape + auth-guard 401; query intents orders/party/stock/brand-sale return live-data answers (probe company ke real brands listed); unknown question → helpful fallback; all 4 pages serve nav.css/nav.js 200. `tsc --noEmit` clean, nav.js parses.
+- **Note:** AI enrichment is optional — bina key bhi assistant fully kaam karta hai (deterministic answers). Key add karni ho to Vercel env me `AI_GATEWAY_API_KEY` set karo.
+- **Files:** `src/routes/assistant.ts` (new), `src/app.ts`, `vercel.json`, `public/nav.css` (new), `public/nav.js` (new), `public/{app,finance,reports,scan}.html`, `BRAIN.md`.
+
 ### [2026-09-09] — Team panel: Edit drawer (name/email/password/role/sections) + login returns userId — **by Buffy (Codebuff)**
 - **User gap:** OWNER apna email/name/password change nahi kar paya (no Edit UI, and login response had no userId so the OWNER row had no actions at all); OPS/VIEWER permissions assign karne ka sirf passive display tha — tick karke grant/revoke karne ka UI hi nahi tha.
 - **Backend:** login (`/auth/login`) now also returns `userId` so the frontend can render self-edit actions. `/users` PATCH already supported displayName/email/role/isActive/permissions/password — no API change needed.

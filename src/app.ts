@@ -54,6 +54,7 @@ import { usersRouter } from "./routes/users";
 import { reportsRouter } from "./routes/reports";
 import { entryRouter } from "./routes/entry";
 import { dashboardRouter } from "./routes/dashboard";
+import { assistantRouter } from "./routes/assistant";
 
 import {
   errorHandler,
@@ -166,6 +167,7 @@ export function createApp(): Express {
     ["/reports", reportsRouter],
     ["/entry", entryRouter],
     ["/dashboard", dashboardRouter],
+    ["/assistant", assistantRouter],
   ];
   for (const [path, router] of routeMounts) {
     app.use(path, router);
