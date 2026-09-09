@@ -123,6 +123,7 @@ authRouter.post("/login", async (req, res, next) => {
       .limit(1);
     res.json({
       token,
+      userId: user.id,
       companyId: user.companyId,
       role: user.role,
       displayName: user.displayName,

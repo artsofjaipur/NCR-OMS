@@ -20,6 +20,14 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-09] — Team panel: Edit drawer (name/email/password/role/sections) + login returns userId — **by Buffy (Codebuff)**
+- **User gap:** OWNER apna email/name/password change nahi kar paya (no Edit UI, and login response had no userId so the OWNER row had no actions at all); OPS/VIEWER permissions assign karne ka sirf passive display tha — tick karke grant/revoke karne ka UI hi nahi tha.
+- **Backend:** login (`/auth/login`) now also returns `userId` so the frontend can render self-edit actions. `/users` PATCH already supported displayName/email/role/isActive/permissions/password — no API change needed.
+- **Frontend (`public/app.js` loadTeam):** every editable user row now has an **Edit** button (OWNER rows editable only by OWNER accounts, per the existing API guard). Clicking opens an inline edit row: Name, Email, New Password (blank = unchanged), Role dropdown (hidden for OWNER targets), and for OPS/VIEWER a **Sections** block — 9 checkboxes + Custom / Role-defaults / None radio mode — mirroring the API's `permissions: [...] | null | []` semantics. Save PATCHes `/users/:id`; invalid password (<8) blocked client-side.
+- **Also removed:** a dead `data-perm-toggle` click handler that made a GET to `/users/:id` (endpoint that never existed) — it was placeholder code.
+- **Verification (real DB, 14/14 pass):** owner self-rename + self-email-change 204; create OPS with `['orders','scan','finance']` → login carries permissions → `/finance/overview` 200, `/reports/pnl` 403; grant `['orders','reports']` + rename + role→VIEWER + password change 204; old password 401, new password 200, reports now 200; owner cannot deactivate self (403). `tsc --noEmit` clean; `app.js` parses.
+- **Files:** `src/routes/auth.ts`, `public/app.js`, `BRAIN.md`.
+
 ### [2026-09-09] — Fix: Brands Manage drawer buttons were all dead (JS crash in renderManage) — **by Buffy (Codebuff)**
 - **Symptom (user screenshot):** Manage drawer khulta tha par Rename / Delete Brand / Deactivate / Show SKUs — sab buttons dead.
 - **Root cause:** `renderManage()` bound `$("#bm-bulk-btn").addEventListener(...)` but the bulk-SKU textarea/button markup had been removed from the drawer HTML in an earlier pass — `null.addEventListener` threw a TypeError, so every binding AFTER it (rename, delete, deactivate, show-SKUs) never attached.
