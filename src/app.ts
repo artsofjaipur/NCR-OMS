@@ -105,7 +105,7 @@ export function createApp(): Express {
   // /reset-password resolve directly), then the static middleware for assets,
   // then index.html as the root.
   app.use(express.static(PUBLIC_DIR, { index: false, maxAge: "1h" }));
-  app.get(["/", "/index.html"], (_req: Request, res: Response) => {
+  app.get(["/", "/index.html", "/home"], (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "index.html"));
   });
   app.get("/login", (_req: Request, res: Response) => {
