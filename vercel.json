@@ -18,6 +18,8 @@
       "destination": "/api" },
     { "source": "/app",
       "destination": "/api" },
+    { "source": "/scan",
+      "destination": "/api" },
     { "source": "/dashboard/:path*",
       "destination": "/api" },
     { "source": "/health",

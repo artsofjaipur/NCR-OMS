@@ -126,6 +126,9 @@ export function createApp(): Express {
   app.get("/app", (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "app.html"));
   });
+  app.get("/scan", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "scan.html"));
+  });
 
   // API Routes
   // Fixed by Claude (Anthropic): mounted at both the bare path and the

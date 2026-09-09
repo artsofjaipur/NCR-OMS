@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Scan Station — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<style>
+  /* scan-station specifics */
+  .scanwrap { max-width: 860px; margin: 0 auto; padding: 26px 20px 60px; }
+  .scanhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .scanhead h1 { font-size: 26px; }
+  .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+  .tabs button {
+    flex: 1; background: var(--bg2); border: 1px solid var(--line2); color: var(--muted);
+    padding: 12px 10px; border-radius: 12px; cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 600;
+    transition: all .2s;
+  }
+  .tabs button.sel { border-color: var(--gold2); color: var(--gold); background: rgba(216,180,92,.08); }
+  .scanbox { display: flex; gap: 12px; }
+  .scanbox input {
+    flex: 1; background: var(--bg2); border: 1.5px solid var(--line2); color: var(--text);
+    border-radius: 12px; padding: 15px 16px; font: inherit; font-size: 17px; letter-spacing: .5px; outline: none;
+  }
+  .scanbox input:focus { border-color: var(--gold2); }
+  .scanbox button {
+    background: linear-gradient(135deg, var(--gold), var(--gold2)); border: none; color: #17130a;
+    border-radius: 12px; padding: 0 26px; font: inherit; font-weight: 700; font-size: 14.5px; cursor: pointer;
+  }
+  .scanbox button:disabled { opacity: .55; cursor: not-allowed; }
+  .scanhint { font-size: 11.5px; color: var(--muted); margin: 8px 0 0 2px; }
+  .feed { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+  .scanrow {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--muted);
+    border-radius: 12px; padding: 13px 16px; animation: slidein .3s ease both;
+  }
+  .scanrow.ok { border-left-color: var(--green); }
+  .scanrow.dup { border-left-color: var(--gold); }
+  .scanrow.err { border-left-color: var(--red); }
+  @keyframes slidein { from { opacity: 0; transform: translateY(-6px); } }
+  .scanrow .sr-main { flex: 1; min-width: 0; }
+  .scanrow .sr-title { font-weight: 600; font-size: 14px; }
+  .scanrow .sr-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .scanrow .sr-tag { font-size: 9.5px; letter-spacing: 1.2px; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .tag-ok { background: rgba(70,185,138,.14); color: var(--green); }
+  .tag-dup { background: rgba(216,180,92,.14); color: var(--gold); }
+  .tag-err { background: rgba(229,105,122,.14); color: var(--red); }
+  .panel { margin-bottom: 22px; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Scan Station</span>
+  </div>
+  <div class="tb-right">
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<div class="scanwrap">
+
+  <div class="tabs" role="tablist">
+    <button type="button" data-tab="pack" class="sel">📦 Pack Scan</button>
+    <button type="button" data-tab="retsheet">↩ Return Sheet</button>
+    <button type="button" data-tab="retrcv">📥 Return Receive</button>
+  </div>
+
+  <!-- ============ PACK SCAN ============ -->
+  <section class="panel" id="tab-pack">
+    <div class="panel-head"><h2 class="serif">Packing Scan</h2><span class="chip">→ READY TO DISPATCH</span></div>
+    <p class="panel-sub">Scan the AWB or Order ID on the label. The order is marked packed and flips to Ready to Dispatch — with brand, marketplace and courier shown for confirmation.</p>
+    <form id="pack-form" class="scanbox">
+      <input id="pack-code" type="text" placeholder="Scan / type AWB or Order ID…" autocomplete="off" autofocus />
+      <button type="submit" id="pack-btn">Mark Packed</button>
+    </form>
+    <div class="scanhint">Scanner works out of the box — it types and presses Enter. Re-scanning a label is safe (shows “already packed”).</div>
+  </section>
+
+  <!-- ============ RETURN SHEET ============ -->
+  <section class="panel" id="tab-retsheet" hidden>
+    <div class="panel-head"><h2 class="serif">Return Sheet Upload</h2><span class="chip">DAILY CSV</span></div>
+    <p class="panel-sub">Upload the store's daily return report. Rows match by Order ID (reverse AWB as fallback). Re-uploading the same sheet never creates duplicates — existing returns are updated.</p>
+    <label for="rs-file" class="dropzone" id="rs-drop">
+      <input type="file" id="rs-file" accept=".csv,text/csv" hidden />
+      <div class="dz-icon">⬆</div>
+      <div class="dz-text"><b id="rs-name">Choose or drop the return sheet (.csv)</b><span>Needs an Order ID column; AWB / date / courier optional</span></div>
+    </label>
+    <button id="rs-btn" class="btn" type="button"><span class="spin"></span>Import Return Sheet</button>
+  </section>
+
+  <!-- ============ RETURN RECEIVE ============ -->
+  <section class="panel" id="tab-retrcv" hidden>
+    <div class="panel-head"><h2 class="serif">Return Receive Scan</h2><span class="chip">→ RECEIVED</span></div>
+    <p class="panel-sub">When the return box physically arrives, scan the reverse AWB or Order ID. The return is marked Received — then QC → Restock adds it back to inventory.</p>
+    <form id="rcv-form" class="scanbox">
+      <input id="rcv-code" type="text" placeholder="Scan / type reverse AWB or Order ID…" autocomplete="off" />
+      <button type="submit" id="rcv-btn">Mark Received</button>
+    </form>
+    <div class="scanhint">Only open returns (Initiated / In-Transit) match — a return can be received once.</div>
+  </section>
+
+  <!-- ============ FEED ============ -->
+  <div class="feed" id="feed"></div>
+</div>
+
+<script src="/scan.js"></script>
+</body>
+</html>
