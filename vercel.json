@@ -1,8 +1,11 @@
 {
   "version": 2,
-  "rewrites": [
+  "redirects": [
     { "source": "/",
-      "destination": "/api" },
+      "destination": "/home",
+      "permanent": false }
+  ],
+  "rewrites": [
     { "source": "/login",
       "destination": "/api" },
     { "source": "/create-account",
@@ -10,6 +13,8 @@
     { "source": "/forgot-password",
       "destination": "/api" },
     { "source": "/reset-password",
+      "destination": "/api" },
+    { "source": "/home",
       "destination": "/api" },
     { "source": "/health",
       "destination": "/api" },
