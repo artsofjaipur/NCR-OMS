@@ -35,6 +35,7 @@ dashboardRouter.get("/summary", async (req, res, next) => {
         brandId: marketplaceAccounts.brandId,
         marketplace: marketplaceAccounts.marketplace,
         sellerAccountLabel: marketplaceAccounts.sellerAccountLabel,
+        isActive: marketplaceAccounts.isActive,
       })
       .from(marketplaceAccounts)
       .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))

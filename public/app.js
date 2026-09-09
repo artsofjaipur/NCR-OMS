@@ -269,12 +269,17 @@
       "</div>" +
       "<div class='bm-head' style='margin-top:14px'><b>Seller accounts</b></div>" +
       (accs.length ? accs.map(function (a) {
-        return "<div class='brand-row acc-row'><div class='b-name'>" + esc(a.sellerAccountLabel || a.marketplace) + "</div>" +
+        var active = a.isActive !== false;
+        return "<div class='brand-row acc-row'><div class='b-name'>" + esc(a.sellerAccountLabel || a.marketplace) +
+          (active ? "" : " <span class='pill pill-red' style='margin-left:6px'>OFF</span>") + "</div>" +
           "<div class='b-mps'><span class='mp-tag'>" + esc(a.marketplace) + "</span>" +
-          "<button type='button' class='bm-mini deact' data-deact='" + a.id + "'>Deactivate</button></div></div>";
+          "<button type='button' class='bm-mini deact' data-deact='" + a.id + "' data-next='" + (active ? "false" : "true") + "'>" + (active ? "Deactivate" : "Activate") + "</button></div></div>";
       }).join("") : "<div class='empty' style='padding:8px 0'>No accounts attached.</div>") +
       "<div class='bm-head' style='margin-top:14px'><b>SKUs</b><button type='button' class='bm-mini' id='bm-skus-btn'>Show SKUs</button></div>" +
       "<div class='bm-skus' id='bm-skus' hidden></div>" +
+      "<div class='bm-head' style='margin-top:14px'><b>Add SKUs (bulk paste)</b></div>" +
+      "<textarea id='bm-bulk-codes' rows='3' placeholder='Ek line me ek SKU code…\nJK-1001-A\nJK-1001-B' style='width:100%;background:var(--bg2);border:1.5px solid var(--line2);color:var(--text);border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;outline:none'></textarea>" +
+      "<button type='button' class='bm-mini' id='bm-bulk-btn' style='margin-top:8px'>Add SKUs</button>" +
       "<div id='bm-result' class='result' hidden></div>";
 
     function bmMsg(kind, msg) {
@@ -284,8 +289,13 @@
       el.hidden = false;
     }
 
+    function on(sel, fn) {
+      var el = $(sel);
+      if (el) el.addEventListener("click", fn);
+    }
+
     // Bulk SKU add — paste list, existing skipped, new auto-mapped.
-    $("#bm-bulk-btn").addEventListener("click", function () {
+    on("#bm-bulk-btn", function () {
       var codes = $("#bm-bulk-codes").value.trim();
       if (!codes) { bmMsg("err", "Paste at least one SKU code."); return; }
       api("/skus/bulk", { method: "POST", body: { brandId: brandId, codes: codes } }).then(function (r) {
@@ -299,7 +309,7 @@
       });
     });
 
-    $("#bm-rename-btn").addEventListener("click", function () {
+    on("#bm-rename-btn", function () {
       var name = $("#bm-rename").value.trim();
       if (name.length < 2) { bmMsg("err", "Name needs 2+ characters."); return; }
       api("/companies/me/brands/" + brandId, { method: "PATCH", body: { name: name } }).then(function (r) {
@@ -309,7 +319,7 @@
       });
     });
 
-    $("#bm-delete-btn").addEventListener("click", function () {
+    on("#bm-delete-btn", function () {
       if (!confirm("Delete brand \"" + b.name + "\"? This also removes its accounts and SKUs. Brands with orders cannot be deleted.")) return;
       api("/companies/me/brands/" + brandId, { method: "DELETE" }).then(function (r) {
         if (r.status === 204) {
@@ -326,14 +336,18 @@
     $all("[data-deact]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var accId = Number(btn.getAttribute("data-deact"));
-        api("/companies/me/marketplace-accounts/" + accId, { method: "PATCH", body: { isActive: false } }).then(function (r) {
-          if (r.status === 204) { bmMsg("ok", "Account deactivated — it no longer appears in upload selects."); loadSummary(); }
+        var next = btn.getAttribute("data-next") === "true";
+        api("/companies/me/marketplace-accounts/" + accId, { method: "PATCH", body: { isActive: next } }).then(function (r) {
+          if (r.status === 204) {
+            bmMsg("ok", next ? "Account activated — upload selects me wapas aa gaya." : "Account deactivated — upload selects se hat gaya.");
+            loadSummary();
+          }
           else bmMsg("err", (r.data && r.data.error) || "Failed.");
         });
       });
     });
 
-    $("#bm-skus-btn").addEventListener("click", function () {
+    on("#bm-skus-btn", function () {
       var pane = $("#bm-skus");
       if (!pane.hidden) { pane.hidden = true; return; }
       api("/companies/me/brands/" + brandId + "/skus").then(function (r) {

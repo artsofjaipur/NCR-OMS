@@ -20,6 +20,13 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-09] — Fix: Brands Manage drawer buttons were all dead (JS crash in renderManage) — **by Buffy (Codebuff)**
+- **Symptom (user screenshot):** Manage drawer khulta tha par Rename / Delete Brand / Deactivate / Show SKUs — sab buttons dead.
+- **Root cause:** `renderManage()` bound `$("#bm-bulk-btn").addEventListener(...)` but the bulk-SKU textarea/button markup had been removed from the drawer HTML in an earlier pass — `null.addEventListener` threw a TypeError, so every binding AFTER it (rename, delete, deactivate, show-SKUs) never attached.
+- **Fix:** bulk "Add SKUs" textarea + button restored inside the drawer; all drawer bindings now go through a null-safe `on(sel, fn)` helper so one missing element can never kill the rest again. Deactivate is now a real toggle — inactive accounts show an OFF pill and the button reads **Activate** (reactivate without leaving the drawer). `GET /dashboard/summary` accounts now include `isActive` (needed by the toggle UI).
+- **Verified vs real DB:** rename 204, account label rename 204, deactivate 204 + summary `isActive:false` ✓, reactivate 204 ✓, brand SKUs list 200, bulk SKU dup-skip works, delete-brand-with-orders 409 message intact. Static audit: every `$("#id")` referenced in app.js exists in app.html (or the dynamic drawer set).
+- Files: `public/app.js`, `public/app.html`, `src/routes/dashboard.ts`.
+
 ### [2026-09-09] — Permissions system, full CRUD, single entry, reports module — **by Buffy (Codebuff)**
 - **User requests:** admin/owner decide per-user section access; har entry pe edit/delete/rename (sirf "Manage" kaafi nahi tha); single entry (order/return/purchase bill); setup order Company→Brand→Store; seller account ke according marketplace auto-change; new tables/schemas ek hi migration me; sab data interconnected (order↔sku↔size↔city↔store↔bills↔notes↔ledger↔P&L↔turnover↔store fees↔expenses).
 - **PERMISSIONS:** `users.permissions` jsonb column (migration pushed live via drizzle-kit push). New `src/security/permissions.ts` — 9 sections (`orders,scan,inventory,dispatch,returns,finance,reports,setup,team`), role defaults (OWNER/ADMIN=full, OPS=ops sections, VIEWER=orders+reports), per-user overrides from DB; `requireSection()` gate mounted on orders/dispatch/purchases/returns/finance/suppliers/warehouses/skus routers + reports/entry/users internally. Login response now returns `{token, companyId, role, displayName, companyName, permissions}` — frontend drives nav visibility from it. New **Team & Permissions panel** in dashboard (OWNER/ADMIN only): add user, deactivate/activate, revoke all sections; guards: only OWNER edits OWNER, OWNER can't be demoted/deactivated, can't deactivate self.
