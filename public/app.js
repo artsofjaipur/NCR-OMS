@@ -210,6 +210,8 @@
   }
 
   // ---------- brands ----------
+  var openManageBrandId = null;
+
   function renderBrands() {
     var list = $("#brand-list");
     var brands = (summary && summary.brands) || [];
@@ -224,14 +226,110 @@
           "<div><div class='b-name'>" + esc(b.name) + "</div></div>" +
           "<div class='b-mps'>" + mps.map(function (a) {
             return "<span class='mp-tag'>" + esc(a.marketplace) + "</span>";
-          }).join("") + "</div></div>";
+          }).join("") +
+          " <button type='button' class='bm-mini' data-manage='" + b.id + "'>Manage</button></div>" +
+          "</div>";
       }).join("");
     }
+
+    $all("[data-manage]").forEach(function (btn) {
+      btn.addEventListener("click", function () { toggleManage(Number(btn.getAttribute("data-manage"))); });
+    });
 
     var sel = $("#sb-brand");
     sel.innerHTML = brands.length
       ? brands.map(function (b) { return "<option value='" + b.id + "'>" + esc(b.name) + "</option>"; }).join("")
       : "<option value=''>Add a brand first</option>";
+
+    if (openManageBrandId) renderManage(openManageBrandId);
+  }
+
+  function toggleManage(brandId) {
+    openManageBrandId = openManageBrandId === brandId ? null : brandId;
+    var box = $("#brand-manage");
+    box.hidden = !openManageBrandId;
+    if (openManageBrandId) renderManage(openManageBrandId);
+  }
+
+  function renderManage(brandId) {
+    var brands = (summary && summary.brands) || [];
+    var accounts = (summary && summary.accounts) || [];
+    var b = brands.find(function (x) { return x.id === brandId; });
+    var box = $("#brand-manage");
+    if (!b) { box.hidden = true; openManageBrandId = null; return; }
+
+    var accs = accounts.filter(function (a) { return a.brandId === brandId; });
+    box.innerHTML =
+      "<div class='bm-head'><b>" + esc(b.name) + "</b><span class='chip chip-dim'>BRAND</span></div>" +
+      "<div class='bm-actions'>" +
+        "<input type='text' id='bm-rename' placeholder='New brand name…' />" +
+        "<button type='button' class='bm-mini' id='bm-rename-btn'>Rename</button>" +
+        "<button type='button' class='bm-mini danger' id='bm-delete-btn'>Delete Brand</button>" +
+      "</div>" +
+      "<div class='bm-head' style='margin-top:14px'><b>Seller accounts</b></div>" +
+      (accs.length ? accs.map(function (a) {
+        return "<div class='brand-row acc-row'><div class='b-name'>" + esc(a.sellerAccountLabel || a.marketplace) + "</div>" +
+          "<div class='b-mps'><span class='mp-tag'>" + esc(a.marketplace) + "</span>" +
+          "<button type='button' class='bm-mini deact' data-deact='" + a.id + "'>Deactivate</button></div></div>";
+      }).join("") : "<div class='empty' style='padding:8px 0'>No accounts attached.</div>") +
+      "<div class='bm-head' style='margin-top:14px'><b>SKUs</b><button type='button' class='bm-mini' id='bm-skus-btn'>Show SKUs</button></div>" +
+      "<div class='bm-skus' id='bm-skus' hidden></div>" +
+      "<div id='bm-result' class='result' hidden></div>";
+
+    function bmMsg(kind, msg) {
+      var el = $("#bm-result");
+      el.className = "result " + kind;
+      el.textContent = msg;
+      el.hidden = false;
+    }
+
+    $("#bm-rename-btn").addEventListener("click", function () {
+      var name = $("#bm-rename").value.trim();
+      if (name.length < 2) { bmMsg("err", "Name needs 2+ characters."); return; }
+      api("/companies/me/brands/" + brandId, { method: "PATCH", body: { name: name } }).then(function (r) {
+        if (!r.ok) { bmMsg("err", (r.data && r.data.error) || "Rename failed."); return; }
+        bmMsg("ok", "Renamed.");
+        loadSummary();
+      });
+    });
+
+    $("#bm-delete-btn").addEventListener("click", function () {
+      if (!confirm("Delete brand \"" + b.name + "\"? This also removes its accounts and SKUs. Brands with orders cannot be deleted.")) return;
+      api("/companies/me/brands/" + brandId, { method: "DELETE" }).then(function (r) {
+        if (r.status === 204) {
+          bmMsg("ok", "Brand deleted.");
+          openManageBrandId = null;
+          box.hidden = true;
+          loadSummary();
+        } else {
+          bmMsg("err", (r.data && r.data.error) || "Delete failed.");
+        }
+      });
+    });
+
+    $all("[data-deact]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var accId = Number(btn.getAttribute("data-deact"));
+        api("/companies/me/marketplace-accounts/" + accId, { method: "PATCH", body: { isActive: false } }).then(function (r) {
+          if (r.status === 204) { bmMsg("ok", "Account deactivated — it no longer appears in upload selects."); loadSummary(); }
+          else bmMsg("err", (r.data && r.data.error) || "Failed.");
+        });
+      });
+    });
+
+    $("#bm-skus-btn").addEventListener("click", function () {
+      var pane = $("#bm-skus");
+      if (!pane.hidden) { pane.hidden = true; return; }
+      api("/companies/me/brands/" + brandId + "/skus").then(function (r) {
+        if (!r.ok || !Array.isArray(r.data)) { bmMsg("err", "Could not load SKUs."); return; }
+        pane.innerHTML = r.data.length
+          ? r.data.map(function (s) {
+              return "<div class='bm-sku-row'><b>" + esc(s.code) + "</b><span>" + esc(s.productTitle) + (s.size ? " · " + esc(s.size) : "") + "</span></div>";
+            }).join("")
+          : "<div class='empty' style='padding:8px 0'>No SKUs yet — add via SKU API or ask support for the bulk importer.</div>";
+        pane.hidden = false;
+      });
+    });
   }
 
   // ---------- workspace setup (brands + marketplace accounts) ----------

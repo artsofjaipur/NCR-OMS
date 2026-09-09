@@ -20,6 +20,11 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-09] — Brand management: rename, delete (order-safe), account deactivate, SKU view — **by Buffy (Codebuff)**
+- **NEW APIs:** `PATCH /companies/me/brands/:id` (rename), `DELETE /companies/me/brands/:id` — refused with **409 + explanation** when the brand has orders (order history / ledger / payouts reference it; cascade would orphan them), cascade-deletes accounts+SKUs+SKU-map when clean; `PATCH /companies/me/marketplace-accounts/:id` `{isActive}` — deactivate/reactivate seller accounts (never hard-delete: order history hangs off them); `GET /companies/me/brands/:id/skus`.
+- **Dashboard Brands panel:** per-brand **Manage** drawer — rename inline, delete with confirm, deactivate accounts, view SKUs. Deactivated accounts disappear from upload selects.
+- All endpoints OWNER/ADMIN only, company-scoped. Verified live: create 201 / rename 204 / delete-with-orders 409+message / deactivate+reactivate 204 / SKU list 200.
+
 ### [2026-09-09] — Scan Station v1: pack scan, daily return sheet, return receive — **by Buffy (Codebuff)**
 - **Warehouse floor workflow (user request):** packing scan marks an order packed → READY_TO_DISPATCH; the store's daily return sheet CSV records returns per date/brand; return-receive scan marks the physical box RECEIVED. All company-scoped, all idempotent.
 - **NEW `/scan` station** (`public/scan.{html,js}`): 3 tabs — Pack Scan, Return Sheet, Return Receive — with audio beep feedback (ok/dup/error), scan-feed history, VIEWER role blocked (read-only), same sessionStorage JWT guard as the dashboard. Dashboard topbar links to it.

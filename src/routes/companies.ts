@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { companies, bankAccounts, brands, marketplaceAccounts } from "../db/schema";
+import { companies, bankAccounts, brands, marketplaceAccounts, orders, skus } from "../db/schema";
 import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
 import { encrypt, encryptJson } from "../security/crypto";
 import { HttpError } from "../middleware/errorHandler";
@@ -114,6 +114,109 @@ companiesRouter.post("/me/brands", requireRole("OWNER", "ADMIN"), async (req, re
       .values({ companyId: req.session!.companyId, name: body.name })
       .returning({ id: brands.id, name: brands.name });
     res.status(201).json(row);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Rename a brand — safe, no history is lost.
+const brandRenameSchema = z.object({ name: z.string().trim().min(2).max(150) });
+
+companiesRouter.patch("/me/brands/:id", requireRole("OWNER", "ADMIN"), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, "Invalid brand id");
+    const body = brandRenameSchema.parse(req.body);
+    const [owned] = await db
+      .select({ id: brands.id })
+      .from(brands)
+      .where(and(eq(brands.id, id), eq(brands.companyId, req.session!.companyId)))
+      .limit(1);
+    if (!owned) throw new HttpError(404, "Brand not found in your workspace");
+    await db.update(brands).set({ name: body.name }).where(eq(brands.id, id));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Delete a brand — only when it has no orders yet. A brand with order history
+ * is part of the ledger (stock reservations, returns, payouts), so deletion is
+ * refused and the error explains why.
+ */
+companiesRouter.delete("/me/brands/:id", requireRole("OWNER", "ADMIN"), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, "Invalid brand id");
+    const [owned] = await db
+      .select({ id: brands.id })
+      .from(brands)
+      .where(and(eq(brands.id, id), eq(brands.companyId, req.session!.companyId)))
+      .limit(1);
+    if (!owned) throw new HttpError(404, "Brand not found in your workspace");
+
+    const [orderHit] = await db
+      .select({ count: orders.id })
+      .from(orders)
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .where(eq(marketplaceAccounts.brandId, id))
+      .limit(1);
+    if (orderHit) {
+      throw new HttpError(409, "This brand has orders — it cannot be deleted because its order history, stock ledger and payouts reference it. Rename it instead.");
+    }
+
+    // No orders: cascade removes its accounts/SKUs/mappings with it.
+    await db.delete(brands).where(eq(brands.id, id));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Deactivate (or re-activate) a seller account — never hard-delete: order history hangs off it. */
+companiesRouter.patch("/me/marketplace-accounts/:id", requireRole("OWNER", "ADMIN"), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, "Invalid account id");
+    const body = z.object({ isActive: z.boolean() }).parse(req.body);
+    const [account] = await db
+      .select({ brandId: marketplaceAccounts.brandId })
+      .from(marketplaceAccounts)
+      .where(eq(marketplaceAccounts.id, id))
+      .limit(1);
+    if (!account) throw new HttpError(404, "Account not found");
+    const [owned] = await db
+      .select({ id: brands.id })
+      .from(brands)
+      .where(and(eq(brands.id, account.brandId), eq(brands.companyId, req.session!.companyId)))
+      .limit(1);
+    if (!owned) throw new HttpError(403, "Account does not belong to your company");
+    await db.update(marketplaceAccounts).set({ isActive: body.isActive }).where(eq(marketplaceAccounts.id, id));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** SKU list per brand with mapping info — drives the Brands manage UI. */
+companiesRouter.get("/me/brands/:id/skus", async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, "Invalid brand id");
+    const [owned] = await db
+      .select({ id: brands.id })
+      .from(brands)
+      .where(and(eq(brands.id, id), eq(brands.companyId, req.session!.companyId)))
+      .limit(1);
+    if (!owned) throw new HttpError(404, "Brand not found in your workspace");
+    const rows = await db
+      .select({ id: skus.id, code: skus.code, productTitle: skus.productTitle, size: skus.size, isActive: skus.isActive })
+      .from(skus)
+      .where(eq(skus.brandId, id))
+      .orderBy(skus.code)
+      .limit(500);
+    res.json(rows);
   } catch (err) {
     next(err);
   }
