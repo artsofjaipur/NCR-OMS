@@ -48,6 +48,7 @@ import { returnsRouter } from "./routes/returns";
 import { payoutsRouter } from "./routes/payouts";
 import { pnlRouter } from "./routes/pnl";
 import { purchasesRouter } from "./routes/purchases";
+import { dashboardRouter } from "./routes/dashboard";
 
 import {
   errorHandler,
@@ -120,6 +121,11 @@ export function createApp(): Express {
   app.get("/reset-password", (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "reset-password.html"));
   });
+  // Authenticated dashboard shell. The page itself guards on the session
+  // token and redirects to /login when absent.
+  app.get("/app", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "app.html"));
+  });
 
   // API Routes
   // Fixed by Claude (Anthropic): mounted at both the bare path and the
@@ -138,6 +144,7 @@ export function createApp(): Express {
     ["/payouts", payoutsRouter],
     ["/pnl", pnlRouter],
     ["/purchases", purchasesRouter],
+    ["/dashboard", dashboardRouter],
   ];
   for (const [path, router] of routeMounts) {
     app.use(path, router);

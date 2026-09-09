@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+
+<!-- ==================== TOP BAR ==================== -->
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- ==================== KPI STRIP ==================== -->
+  <section class="kpis">
+    <div class="kpi" id="kpi-today">
+      <div class="kpi-label">Orders Today</div>
+      <div class="kpi-value">—</div>
+      <div class="kpi-sub"><span class="dot dot-live"></span>live</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Revenue Today</div>
+      <div class="kpi-value" id="kpi-revenue">—</div>
+      <div class="kpi-sub">all marketplaces</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Pending Dispatch</div>
+      <div class="kpi-value" id="kpi-pending">—</div>
+      <div class="kpi-sub">ready &amp; packed</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Open Returns</div>
+      <div class="kpi-value" id="kpi-returns">—</div>
+      <div class="kpi-sub">initiated / received</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Total Orders</div>
+      <div class="kpi-value" id="kpi-total">—</div>
+      <div class="kpi-sub" id="kpi-gmv">GMV —</div>
+    </div>
+  </section>
+
+  <div class="grid">
+
+    <!-- ==================== UPLOAD (entry path #1: manual CSV) ==================== -->
+    <section class="panel upload-panel">
+      <div class="panel-head">
+        <h2 class="serif">Upload Orders</h2>
+        <span class="chip">MANUAL CSV</span>
+      </div>
+      <p class="panel-sub">Drop the marketplace export. Duplicates are updated, not re-created — re-uploading is always safe.</p>
+
+      <form id="upload-form">
+        <div class="form-row">
+          <label for="up-marketplace">MARKETPLACE</label>
+          <div class="seg" id="up-marketplace">
+            <button type="button" data-mp="flipkart" class="sel">Flipkart</button>
+            <button type="button" data-mp="meesho">Meesho</button>
+            <button type="button" data-mp="snapdeal">Snapdeal</button>
+          </div>
+        </div>
+
+        <div class="form-row two">
+          <div>
+            <label for="up-account">SELLER ACCOUNT</label>
+            <select id="up-account" required>
+              <option value="">Loading accounts…</option>
+            </select>
+          </div>
+          <div>
+            <label for="up-warehouse">WAREHOUSE</label>
+            <select id="up-warehouse" required>
+              <option value="">Loading warehouses…</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="up-file" class="dropzone" id="dropzone">
+          <input type="file" id="up-file" accept=".csv,text/csv" hidden />
+          <div class="dz-icon">⬆</div>
+          <div class="dz-text"><b id="dz-name">Choose or drop a .csv file</b><span>Flipkart / Meesho / Snapdeal export</span></div>
+        </label>
+
+        <button id="up-btn" class="btn" type="submit"><span class="spin"></span>Import Orders</button>
+      </form>
+
+      <div id="upload-result" class="result" hidden></div>
+    </section>
+
+    <!-- ==================== 14-DAY TREND ==================== -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2 class="serif">Last 14 Days</h2>
+        <span class="chip chip-dim">ORDERS / DAY</span>
+      </div>
+      <div class="chart" id="trend-chart" aria-hidden="true"></div>
+      <div class="trend-foot" id="trend-foot"></div>
+    </section>
+
+    <!-- ==================== BRANDS + SETUP ==================== -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2 class="serif">Brands &amp; Setup</h2>
+        <span class="chip chip-dim" id="brand-count">0</span>
+      </div>
+      <div id="brand-list" class="brand-list"></div>
+      <div class="panel-sub small">New workspace? Add a brand, then attach its marketplace seller account — then CSV uploads can flow.</div>
+
+      <details class="setup" id="setup-box">
+        <summary>＋ Add brand / seller account</summary>
+        <div class="setup-body">
+          <div class="form-row two">
+            <div>
+              <label for="sb-brand-name">BRAND NAME</label>
+              <input type="text" id="sb-brand-name" placeholder="e.g. Vardhamiti" />
+            </div>
+            <div style="display:flex; align-items:flex-end">
+              <button type="button" id="sb-brand-btn" class="btn small">Add Brand</button>
+            </div>
+          </div>
+          <div class="form-row two">
+            <div>
+              <label for="sb-brand">EXISTING BRAND</label>
+              <select id="sb-brand"><option value="">—</option></select>
+            </div>
+            <div>
+              <label for="sb-mp">MARKETPLACE</label>
+              <select id="sb-mp">
+                <option value="FLIPKART">Flipkart</option>
+                <option value="MEESHO">Meesho</option>
+                <option value="SNAPDEAL">Snapdeal</option>
+                <option value="AMAZON_IN">Amazon IN</option>
+                <option value="MYNTRA">Myntra</option>
+                <option value="AJIO">AJIO</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="sb-label">SELLER ACCOUNT LABEL</label>
+            <input type="text" id="sb-label" placeholder="e.g. Vardhamiti Official" />
+          </div>
+          <button type="button" id="sb-account-btn" class="btn ghostbtn2">Attach Seller Account</button>
+          <div id="setup-result" class="result" hidden></div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ==================== RECENT ORDERS ==================== -->
+    <section class="panel wide">
+      <div class="panel-head">
+        <h2 class="serif">Recent Orders</h2>
+        <span class="chip chip-dim">LATEST 20</span>
+      </div>
+      <div class="tablewrap">
+        <table id="orders-table">
+          <thead>
+            <tr><th>Order ID</th><th>Marketplace</th><th>Status</th><th>Items</th><th>Ordered</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="orders-empty" class="empty">No orders yet — upload your first CSV above.</div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
