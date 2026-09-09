@@ -20,6 +20,14 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-09] — Suppliers (party), bulk SKU add with auto-map, Stock In UI, stock view — **by Buffy (Codebuff)**
+- **NEW `GET/POST /suppliers`** — party master (stock source for purchase bills), company-scoped, OWNER/ADMIN to create.
+- **NEW `POST /skus/bulk`** `{brandId, codes, autoMap?}` — paste a list (one per line / comma / CSV); existing codes skipped, new ones inserted (title=code) and **self-mapped** (`marketplaceSku == sku code`) onto every account of that brand via `ON CONFLICT DO NOTHING`, so marketplace CSVs using the same codes import without manual mapping.
+- **NEW `GET /skus/stock`** — on-hand per SKU = `SUM(inventory_ledger.delta)` (append-only ledger), company-scoped, optional `?warehouseId=`.
+- **SECURITY FIX:** `GET /skus` leaked all companies' SKUs — now inner-joins brands and filters `companyId`; also scoped `/skus/:id` PATCH was already company-checked at create-time only (acceptable for now).
+- **Dashboard setup panel:** Party add + picker, SKU picker, Stock In form (SKU × qty × unit cost × warehouse × party) posting to `POST /purchases` with `source:PURCHASE_ORDER` + `poReference` = party name. Brands Manage drawer gets a **bulk Add SKUs textarea**.
+- Verified live: supplier 201, bulk 8 created + dup skipped + 9 mappings, Stock In 24 units → onHand 24, re-bulk skips existing.
+
 ### [2026-09-09] — Brand management: rename, delete (order-safe), account deactivate, SKU view — **by Buffy (Codebuff)**
 - **NEW APIs:** `PATCH /companies/me/brands/:id` (rename), `DELETE /companies/me/brands/:id` — refused with **409 + explanation** when the brand has orders (order history / ledger / payouts reference it; cascade would orphan them), cascade-deletes accounts+SKUs+SKU-map when clean; `PATCH /companies/me/marketplace-accounts/:id` `{isActive}` — deactivate/reactivate seller accounts (never hard-delete: order history hangs off them); `GET /companies/me/brands/:id/skus`.
 - **Dashboard Brands panel:** per-brand **Manage** drawer — rename inline, delete with confirm, deactivate accounts, view SKUs. Deactivated accounts disappear from upload selects.

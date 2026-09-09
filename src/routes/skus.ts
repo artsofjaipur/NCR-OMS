@@ -3,19 +3,37 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { skus, brands, marketplaceSkuMap, marketplaceAccounts } from "../db/schema";
-import { requireAuth, requireCompanyScope } from "../middleware/auth";
+import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
 import { HttpError } from "../middleware/errorHandler";
 
 export const skusRouter = Router();
 skusRouter.use(requireAuth, requireCompanyScope);
 
-/** Closes the "no CRUD API routes for SKUs" gap from the earlier build. */
+/** SKU list, always scoped to the caller's company (join brands for the filter). */
 skusRouter.get("/", async (req, res, next) => {
   try {
     const brandId = req.query.brandId ? Number(req.query.brandId) : undefined;
-    const rows = brandId
-      ? await db.select().from(skus).where(eq(skus.brandId, brandId))
-      : await db.select().from(skus);
+    const rows = await db
+      .select({
+        id: skus.id,
+        brandId: skus.brandId,
+        code: skus.code,
+        productTitle: skus.productTitle,
+        color: skus.color,
+        size: skus.size,
+        hsnCode: skus.hsnCode,
+        mrp: skus.mrp,
+        isActive: skus.isActive,
+      })
+      .from(skus)
+      .innerJoin(brands, eq(brands.id, skus.brandId))
+      .where(
+        brandId
+          ? and(eq(brands.companyId, req.session!.companyId), eq(skus.brandId, brandId))
+          : eq(brands.companyId, req.session!.companyId)
+      )
+      .orderBy(skus.code)
+      .limit(1000);
     res.json(rows);
   } catch (err) {
     next(err);
@@ -142,6 +160,112 @@ skusRouter.get("/mappings", async (req, res, next) => {
       .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, marketplaceSkuMap.marketplaceAccountId))
       .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
       .where(and(eq(marketplaceSkuMap.marketplaceAccountId, accountId), eq(brands.companyId, req.session!.companyId)));
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Bulk SKU add — paste a list of SKU codes (one per line or CSV) and every
+// new code becomes a SKU of the brand. Existing codes are skipped, and every
+// new SKU automatically maps to itself for every account of that brand, so
+// marketplace CSVs using the same codes import without manual mapping.
+// ---------------------------------------------------------------------------
+const bulkSchema = z.object({
+  brandId: z.number().int().positive(),
+  codes: z.string().min(1).max(100_000),
+  autoMap: z.boolean().optional(),
+});
+
+skusRouter.post("/bulk", requireRole("OWNER", "ADMIN"), async (req, res, next) => {
+  try {
+    const body = bulkSchema.parse(req.body);
+    const [brand] = await db
+      .select({ companyId: brands.companyId })
+      .from(brands)
+      .where(and(eq(brands.id, body.brandId), eq(brands.companyId, req.session!.companyId)))
+      .limit(1);
+    if (!brand) throw new HttpError(403, "Brand does not belong to your company");
+
+    // Accept "JK-1001-A\nJK-1001-B" or "JK-1001-A,JK-1001-B" or one per line.
+    const codes = [...new Set(
+      body.codes
+        .split(/[\n,;\r]+/)
+        .map((c) => c.trim())
+        .filter((c) => c.length > 0 && c.length <= 100)
+    )];
+    if (!codes.length) throw new HttpError(400, "No SKU codes found in the input");
+
+    let created = 0;
+    const skipped: string[] = [];
+    for (const code of codes) {
+      try {
+        await db.insert(skus).values({ brandId: body.brandId, code, productTitle: code });
+        created += 1;
+      } catch {
+        skipped.push(code); // unique per brand — already exists
+      }
+    }
+
+    // Self-map: marketplace SKU string == our SKU code for these brands.
+    let mapped = 0;
+    if (body.autoMap !== false) {
+      const accounts = await db
+        .select({ id: marketplaceAccounts.id })
+        .from(marketplaceAccounts)
+        .where(eq(marketplaceAccounts.brandId, body.brandId));
+      const allSkus = await db
+        .select({ id: skus.id, code: skus.code })
+        .from(skus)
+        .where(eq(skus.brandId, body.brandId));
+      for (const account of accounts) {
+        for (const sku of allSkus) {
+          try {
+            await db
+              .insert(marketplaceSkuMap)
+              .values({ marketplaceAccountId: account.id, marketplaceSku: sku.code, skuId: sku.id })
+              .onConflictDoNothing();
+            mapped += 1;
+          } catch { /* conflict handled above */ }
+        }
+      }
+    }
+
+    res.status(201).json({ created, skipped, mapped });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Stock view — current on-hand per SKU (ledger is append-only; stock = SUM).
+// ---------------------------------------------------------------------------
+import { sql } from "drizzle-orm";
+import { inventoryLedger } from "../db/schema";
+
+skusRouter.get("/stock", async (req, res, next) => {
+  try {
+    const warehouseId = req.query.warehouseId ? Number(req.query.warehouseId) : undefined;
+    const rows = await db
+      .select({
+        skuId: skus.id,
+        code: skus.code,
+        brand: brands.name,
+        warehouseId: inventoryLedger.warehouseId,
+        onHand: sql<number>`coalesce(sum(${inventoryLedger.delta}), 0)::int`,
+      })
+      .from(skus)
+      .innerJoin(brands, eq(brands.id, skus.brandId))
+      .leftJoin(
+        inventoryLedger,
+        warehouseId
+          ? and(eq(inventoryLedger.skuId, skus.id), eq(inventoryLedger.warehouseId, warehouseId))
+          : eq(inventoryLedger.skuId, skus.id)
+      )
+      .where(eq(brands.companyId, req.session!.companyId))
+      .groupBy(skus.id, skus.code, brands.name, inventoryLedger.warehouseId)
+      .orderBy(skus.code);
     res.json(rows);
   } catch (err) {
     next(err);

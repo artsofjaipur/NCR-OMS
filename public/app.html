@@ -158,6 +158,40 @@
             <input type="text" id="sb-label" placeholder="e.g. Vardhamiti Official" />
           </div>
           <button type="button" id="sb-account-btn" class="btn ghostbtn2">Attach Seller Account</button>
+
+          <div class="form-row" style="margin-top:18px">
+            <label for="sup-name">PARTY / SUPPLIER (STOCK SOURCE)</label>
+            <div class="form-row two" style="margin-bottom:10px">
+              <input type="text" id="sup-name" placeholder="Party name, e.g. Shree Textiles" />
+              <div style="display:flex;align-items:flex-end">
+                <button type="button" id="sup-add-btn" class="btn ghostbtn2">Add Party</button>
+              </div>
+            </div>
+            <select id="sup-list"><option value="">Loading parties…</option></select>
+          </div>
+
+          <div class="form-row two">
+            <div>
+              <label for="pi-sku">STOCK IN — SKU</label>
+              <select id="pi-sku"><option value="">Loading SKUs…</option></select>
+            </div>
+            <div>
+              <label for="pi-qty">QTY RECEIVED</label>
+              <input type="number" id="pi-qty" min="1" placeholder="e.g. 24" />
+            </div>
+          </div>
+          <div class="form-row two">
+            <div>
+              <label for="pi-cost">UNIT COST (₹)</label>
+              <input type="number" id="pi-cost" min="0" step="0.01" placeholder="e.g. 450.00" />
+            </div>
+            <div>
+              <label for="pi-warehouse">TO WAREHOUSE</label>
+              <select id="pi-warehouse"><option value="">—</option></select>
+            </div>
+          </div>
+          <button type="button" id="pi-btn" class="btn">＋ Stock In (Purchase Bill)</button>
+
           <div id="setup-result" class="result" hidden></div>
         </div>
       </details>

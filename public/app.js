@@ -283,6 +283,21 @@
       el.hidden = false;
     }
 
+    // Bulk SKU add — paste list, existing skipped, new auto-mapped.
+    $("#bm-bulk-btn").addEventListener("click", function () {
+      var codes = $("#bm-bulk-codes").value.trim();
+      if (!codes) { bmMsg("err", "Paste at least one SKU code."); return; }
+      api("/skus/bulk", { method: "POST", body: { brandId: brandId, codes: codes } }).then(function (r) {
+        if (!r.ok) { bmMsg("err", (r.data && r.data.error) || "Bulk add failed."); return; }
+        var d = r.data;
+        bmMsg(d.created ? "ok" : "err",
+          d.created + " SKU(s) added" + (d.skipped && d.skipped.length ? ", " + d.skipped.length + " already existed (skipped)" : "") +
+          (d.mapped ? " · " + d.mapped + " account mappings ensured" : ""));
+        $("#bm-bulk-codes").value = "";
+        loadSummary();
+      });
+    });
+
     $("#bm-rename-btn").addEventListener("click", function () {
       var name = $("#bm-rename").value.trim();
       if (name.length < 2) { bmMsg("err", "Name needs 2+ characters."); return; }
@@ -331,6 +346,68 @@
       });
     });
   }
+
+  // ---------- parties & stock in (purchase bills) ----------
+  function renderParties() {
+    api("/suppliers").then(function (r) {
+      if (!r.ok || !Array.isArray(r.data)) return;
+      var sel = $("#sup-list");
+      sel.innerHTML = r.data.length
+        ? "<option value=''>— pick party (optional) —</option>" + r.data.map(function (s) {
+            return "<option value='" + s.id + "'>" + esc(s.name) + "</option>";
+          }).join("")
+        : "<option value=''>No parties yet — add above</option>";
+    });
+  }
+
+  function renderSkuPicker() {
+    api("/skus").then(function (r) {
+      if (!r.ok || !Array.isArray(r.data)) return;
+      var sel = $("#pi-sku");
+      sel.innerHTML = r.data.length
+        ? r.data.map(function (s) {
+            return "<option value='" + s.id + "'>" + esc(s.code) + (s.productTitle && s.productTitle !== s.code ? " — " + esc(s.productTitle) : "") + "</option>";
+          }).join("")
+        : "<option value=''>No SKUs yet — add via Brands panel</option>";
+    });
+  }
+
+  $("#sup-add-btn").addEventListener("click", function () {
+    var name = $("#sup-name").value.trim();
+    if (name.length < 2) { showSetup("err", "Party name needs 2+ characters."); return; }
+    api("/suppliers", { method: "POST", body: { name: name } }).then(function (r) {
+      if (!r.ok) { showSetup("err", (r.data && r.data.error) || "Could not add party."); return; }
+      $("#sup-name").value = "";
+      showSetup("ok", "Party added.");
+      renderParties();
+    });
+  });
+
+  $("#pi-btn").addEventListener("click", function () {
+    var skuId = Number($("#pi-sku").value);
+    var qty = Number($("#pi-qty").value);
+    var cost = $("#pi-cost").value.trim();
+    var wh = Number($("#pi-warehouse").value);
+    var supplierId = Number($("#sup-list").value) || undefined;
+    if (!skuId) { showSetup("err", "Pick a SKU."); return; }
+    if (!qty || qty < 1) { showSetup("err", "Quantity must be at least 1."); return; }
+    if (!wh) { showSetup("err", "Pick the warehouse receiving the stock."); return; }
+    api("/purchases", {
+      method: "POST",
+      body: {
+        warehouseId: wh,
+        supplierId: supplierId,
+        source: "PURCHASE_ORDER",
+        poReference: $("#sup-list").selectedOptions && $("#sup-list").selectedOptions[0] ? $("#sup-list").selectedOptions[0].text : undefined,
+        items: [{ skuId: skuId, quantity: qty, unitCost: cost ? cost : "0" }],
+      },
+    }).then(function (r) {
+      if (!r.ok) { showSetup("err", (r.data && r.data.error) || "Stock In failed."); return; }
+      showSetup("ok", "Stock In recorded — " + qty + " unit(s) added to inventory (ledger updated)."
+        + (supplierId ? " Party bill reference saved." : ""));
+      $("#pi-qty").value = ""; $("#pi-cost").value = "";
+    });
+  });
 
   // ---------- workspace setup (brands + marketplace accounts) ----------
   function showSetup(kind, msg) {
@@ -423,4 +500,6 @@
   // ---------- boot ----------
   loadSummary();
   loadOrders();
+  renderParties();
+  renderSkuPicker();
 })();

@@ -43,6 +43,8 @@
     { "source": "/pnl/:path*",
       "destination": "/api" },
     { "source": "/purchases/:path*",
-      "destination": "/api" }
+      "destination": "/api" },
+    { "source": "/suppliers/:path*",
+      "destination": "/api" },
   ]
 }

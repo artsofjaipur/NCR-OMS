@@ -48,6 +48,7 @@ import { returnsRouter } from "./routes/returns";
 import { payoutsRouter } from "./routes/payouts";
 import { pnlRouter } from "./routes/pnl";
 import { purchasesRouter } from "./routes/purchases";
+import { suppliersRouter } from "./routes/suppliers";
 import { dashboardRouter } from "./routes/dashboard";
 
 import {
@@ -147,6 +148,7 @@ export function createApp(): Express {
     ["/payouts", payoutsRouter],
     ["/pnl", pnlRouter],
     ["/purchases", purchasesRouter],
+    ["/suppliers", suppliersRouter],
     ["/dashboard", dashboardRouter],
   ];
   for (const [path, router] of routeMounts) {
