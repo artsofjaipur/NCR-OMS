@@ -71,9 +71,14 @@
     b.addEventListener("click", function () {
       $all(".tabs button").forEach(function (x) { x.classList.remove("sel"); });
       b.classList.add("sel");
+      var tab = b.getAttribute("data-tab");
       ["pack", "retsheet", "retrcv"].forEach(function (t) {
-        $("#tab-" + t).hidden = t !== b.getAttribute("data-tab");
+        $("#tab-" + t).hidden = t !== tab;
       });
+      // USB scanners type into whatever is focused — keep the scan input
+      // focused on every tab so the gun never needs a click first.
+      if (tab === "pack") $("#pack-code").focus();
+      if (tab === "retrcv") $("#rcv-code").focus();
     });
   });
 
