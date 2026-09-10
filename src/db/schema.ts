@@ -77,6 +77,13 @@ export const companies = pgTable("companies", {
   gstin: varchar("gstin", { length: 15 }),
   pan: varchar("pan", { length: 10 }),
   cin: varchar("cin", { length: 21 }),
+  // Invoice/order reference prefix per company (e.g. "PO NO.", "RF NO.", "RG NO.")
+  orderReferencePrefix: varchar("order_reference_prefix", { length: 20 }),
+  // Export registration + contact details (company setup, 2026-09-10)
+  iec: varchar("iec", { length: 20 }),
+  phone: varchar("phone", { length: 20 }),
+  whatsapp: varchar("whatsapp", { length: 20 }),
+  email: varchar("email", { length: 255 }),
   addressLine1: varchar("address_line1", { length: 200 }),
   addressLine2: varchar("address_line2", { length: 200 }),
   city: varchar("city", { length: 100 }),
@@ -100,6 +107,8 @@ export const bankAccounts = pgTable("bank_accounts", {
   ifsc: varchar("ifsc", { length: 11 }).notNull(),
   bankName: varchar("bank_name", { length: 150 }).notNull(),
   branchName: varchar("branch_name", { length: 150 }),
+  // AD Code for export/remittance (printed on invoices), 2026-09-10
+  adCode: varchar("ad_code", { length: 30 }),
   accountType: varchar("account_type", { length: 30 }).default("CURRENT"),
   isPrimary: boolean("is_primary").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -31,6 +31,12 @@ const profileSchema = z.object({
   logoUrl: z.string().url().optional(),
   gstin: z.string().length(15).optional(),
   pan: z.string().length(10).optional(),
+  // Company setup fields (order prefix + export + contact), 2026-09-10
+  orderReferencePrefix: z.string().trim().max(20).optional(),
+  iec: z.string().trim().max(20).optional(),
+  phone: z.string().trim().max(20).optional(),
+  whatsapp: z.string().trim().max(20).optional(),
+  email: z.string().trim().email().max(255).optional(),
   addressLine1: z.string().optional(),
   addressLine2: z.string().optional(),
   city: z.string().optional(),
@@ -58,6 +64,7 @@ const bankAccountSchema = z.object({
   ifsc: z.string().length(11),
   bankName: z.string().min(1),
   branchName: z.string().optional(),
+  adCode: z.string().trim().max(30).optional(),
   accountType: z.string().optional(),
   isPrimary: z.boolean().optional(),
 });
@@ -75,6 +82,7 @@ companiesRouter.post("/me/bank-accounts", requireRole("OWNER", "ADMIN"), async (
         ifsc: body.ifsc,
         bankName: body.bankName,
         branchName: body.branchName,
+        adCode: body.adCode,
         accountType: body.accountType,
         isPrimary: body.isPrimary ?? false,
       })

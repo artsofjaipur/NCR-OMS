@@ -175,6 +175,104 @@
     });
   }
 
+  // ---------- company profile (view/edit + bank accounts) ----------
+  var canEditCompany = auth.role === "OWNER" || auth.role === "ADMIN";
+
+  function cpMsg(kind, msg) {
+    var box = $("#cp-result");
+    box.className = "result " + kind;
+    box.textContent = msg;
+    box.hidden = false;
+    setTimeout(function () { box.hidden = true; }, 6000);
+  }
+
+  function fillCompanyProfile(c) {
+    $("#tb-company").textContent = c.displayName || "";
+    $("#cp-prefix-chip").textContent = c.orderReferencePrefix || "set prefix";
+    $("#cp-legal").value = c.legalName || "";
+    $("#cp-display").value = c.displayName || "";
+    $("#cp-prefix").value = c.orderReferencePrefix || "";
+    $("#cp-gstin").value = c.gstin || "";
+    $("#cp-iec").value = c.iec || c.pan || "";
+    $("#cp-phone").value = c.phone || "";
+    $("#cp-whatsapp").value = c.whatsapp || "";
+    $("#cp-email").value = c.email || "";
+    $("#cp-addr1").value = c.addressLine1 || "";
+    $("#cp-city").value = c.city || "";
+    $("#cp-state").value = c.state || "";
+    $("#cp-pincode").value = c.pincode || "";
+    if (!canEditCompany) {
+      ["cp-legal","cp-display","cp-prefix","cp-gstin","cp-iec","cp-phone","cp-whatsapp","cp-email","cp-addr1","cp-city","cp-state","cp-pincode"].forEach(function (id) { $("#" + id).disabled = true; });
+      $("#cp-save-btn").disabled = true;
+      $("#cp-readonly-note").hidden = false;
+    }
+  }
+
+  function loadCompanyProfile() {
+    api("/companies/me").then(function (r) {
+      if (!r.ok || !r.data) return;
+      var c = r.data;
+      fillCompanyProfile(c);
+      var banks = (c.bankAccounts || []).map(function (b) {
+        return "<div class='bm-card'>" +
+          "<div><b>" + esc(b.label || "Account") + "</b>" + (b.isPrimary ? " <span class='pill pill-ok'>PRIMARY</span>" : "") + "</div>" +
+          "<div class='small'>" + esc(b.bankName || "") + " · " + esc(b.ifsc || "") + "</div>" +
+          "<div class='small'>A/C: " + esc(b.accountNumberMasked || "••••") + "</div>" +
+          "<div class='small'>AD Code: " + esc(b.adCode || "—") + "</div>" +
+          "</div>";
+      }).join("");
+      $("#cp-banks").innerHTML = banks || "<div class='small' style='color:var(--muted)'>No bank account yet — invoice auto-fill ke liye add karo.</div>";
+    });
+  }
+
+  $("#cp-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!canEditCompany) return;
+    var body = {
+      legalName: $("#cp-legal").value.trim() || undefined,
+      displayName: $("#cp-display").value.trim() || undefined,
+      orderReferencePrefix: $("#cp-prefix").value.trim() || undefined,
+      gstin: $("#cp-gstin").value.trim().length === 15 ? $("#cp-gstin").value.trim() : undefined,
+      iec: $("#cp-iec").value.trim() || undefined,
+      phone: $("#cp-phone").value.trim() || undefined,
+      whatsapp: $("#cp-whatsapp").value.trim() || undefined,
+      email: $("#cp-email").value.trim() || undefined,
+      addressLine1: $("#cp-addr1").value.trim() || undefined,
+      city: $("#cp-city").value.trim() || undefined,
+      state: $("#cp-state").value.trim() || undefined,
+      pincode: $("#cp-pincode").value.trim().length === 6 ? $("#cp-pincode").value.trim() : undefined,
+    };
+    api("/companies/me", { method: "PATCH", body: body }).then(function (r) {
+      if (r.status === 204) { cpMsg("ok", "Company profile saved ✓"); loadCompanyProfile(); }
+      else cpMsg("err", (r.data && r.data.error) || "Save failed — check GSTIN (15) / PIN (6) / email format.");
+    });
+  });
+
+  $("#bk-add-btn").addEventListener("click", function () {
+    if (!canEditCompany) return;
+    var body = {
+      label: $("#bk-label").value.trim(),
+      accountHolderName: $("#bk-holder").value.trim(),
+      accountNumber: $("#bk-number").value.trim(),
+      ifsc: $("#bk-ifsc").value.trim().toUpperCase(),
+      bankName: $("#bk-bank").value.trim(),
+      adCode: $("#bk-adcode").value.trim() || undefined,
+    };
+    if (!body.label || !body.accountHolderName || !body.accountNumber || body.ifsc.length !== 11 || !body.bankName) {
+      cpMsg("err", "Bank form poora bharo — IFSC 11 characters ka hona chahiye.");
+      return;
+    }
+    api("/companies/me/bank-accounts", { method: "POST", body: body }).then(function (r) {
+      if (r.status === 201) {
+        cpMsg("ok", "Bank account added ✓ (number encrypted store hua)");
+        ["bk-label","bk-holder","bk-number","bk-ifsc","bk-bank","bk-adcode"].forEach(function (id) { $("#" + id).value = ""; });
+        loadCompanyProfile();
+      } else cpMsg("err", (r.data && r.data.error) || "Bank account add failed.");
+    });
+  });
+
+  loadCompanyProfile();
+
   // ---------- selects ----------
   // Seller account IS the selector — its marketplace auto-detected and shown
   // as a badge (user request: "seller account ke according marketplace change

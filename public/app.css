@@ -275,6 +275,13 @@ select:focus { border-color: var(--gold2); }
 
 /* ---------- brands ---------- */
 .brand-list { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 4px; }
+.bm-card {
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.bm-card .pill { margin-left: 6px; }
 .brand-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   background: var(--bg2);
