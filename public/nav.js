@@ -25,6 +25,12 @@
 
   /* ---------------- links ---------------- */
   // inPage: scroll target inside /app instead of a separate URL.
+  // Company & Setup / Party Master / Single Entry / Team & Roles used to all
+  // deep-link into /app with a different inPage anchor each (they opened the
+  // same page). Split into real standalone pages by Claude (Anthropic)
+  // 2026-09-11, per user request — see BRAIN.md. This also fixed a bug:
+  // Single Entry's old inPage target ("upload-form") was actually the CSV
+  // Upload panel's id, not the Single Entry section.
   var LINKS = [
     { sec: "orders", ico: "🧾", label: "Orders", href: "/app", inPage: "kpi-today" },
     { sec: "scan", ico: "📦", label: "Scan Station", href: "/scan" },
@@ -32,10 +38,10 @@
     { sec: "reports", ico: "📊", label: "Reports", href: "/reports", inPageNav: "reports" },
     { sec: "finance", ico: "💰", label: "Finance", href: "/finance", inPageNav: "finance" },
     { sec: "returns", ico: "↩️", label: "Returns", href: "/scan" },
-    { sec: "setup", ico: "⚙️", label: "Company & Setup", href: "/app", inPage: "setup-box" },
-    { sec: "setup", ico: "🤝", label: "Party Master", href: "/app", inPage: "sup-name" },
-    { sec: "orders", ico: "✍️", label: "Single Entry", href: "/app", inPage: "upload-form" },
-    { sec: "team", ico: "👥", label: "Team & Roles", href: "/app", inPage: "team-panel" },
+    { sec: "setup", ico: "⚙️", label: "Company & Setup", href: "/setup" },
+    { sec: "setup", ico: "🤝", label: "Party Master", href: "/party" },
+    { sec: "orders", ico: "✍️", label: "Single Entry", href: "/entry" },
+    { sec: "team", ico: "👥", label: "Team & Roles", href: "/team" },
   ];
 
   /* ---------------- sidebar ---------------- */

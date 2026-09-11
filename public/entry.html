@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Single Entry — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+<link rel="stylesheet" href="/nav.css" />
+</head>
+<body>
+
+<!-- Single Entry — split out of /app into its own page by Claude
+     (Anthropic) 2026-09-11, per user request. Also fixes a pre-existing
+     sidebar bug: the "Single Entry" nav link used to deep-link to
+     #upload-form, which was actually the CSV Upload panel's id, not this
+     section — clicking it landed you on the wrong form. See BRAIN.md. -->
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Single Entry</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <section class="panel wide">
+    <div class="panel-head">
+      <h2 class="serif">Single Entry</h2>
+      <span class="chip chip-dim">MANUAL ONE-OFF</span>
+    </div>
+    <p class="panel-sub">Ek-ek entry bina CSV ke — order ya return. Stock, ledger, brand, store — sab auto-connect hota hai. Bulk import ke liye <a href="/app" style="color:var(--gold)">Dashboard</a> ka Upload Orders use karo.</p>
+    <div class="notes-grid">
+      <form id="so-form" class="fgrid fgrid-tight">
+        <div class="fgrid-title">＋ New Order (single)</div>
+        <label>Store <select id="so-account" required></select></label>
+        <label>Warehouse <select id="so-warehouse" required></select></label>
+        <label>Order ID <input id="so-oid" type="text" required placeholder="MKTP-12345" /></label>
+        <label>SKU (code) <input id="so-sku" type="text" required placeholder="VDM-001" style="text-transform:uppercase" /></label>
+        <label>Size <input id="so-size" type="text" placeholder="XL" /></label>
+        <label>Qty <input id="so-qty" type="number" min="1" value="1" required /></label>
+        <label>Price (₹) <input id="so-price" type="number" min="0" step="0.01" required placeholder="1299.00" /></label>
+        <label>City <input id="so-city" type="text" placeholder="Jaipur" /></label>
+        <button type="submit" class="btn" id="so-btn">Create Order</button>
+      </form>
+      <form id="sr-form" class="fgrid fgrid-tight">
+        <div class="fgrid-title">↩ New Return (single)</div>
+        <label>Order ID <input id="sr-oid" type="text" required placeholder="Order ID jo return hua" /></label>
+        <label>Reverse AWB <input id="sr-awb" type="text" placeholder="optional" /></label>
+        <label>Courier <input id="sr-courier" type="text" placeholder="optional" /></label>
+        <label>Note <input id="sr-note" type="text" placeholder="reason / remark" /></label>
+        <button type="submit" class="btn ghostbtn2" id="sr-btn">Create Return</button>
+        <label style="grid-column:1/-1">Receive return by ID <input id="sr-recv" type="number" min="1" placeholder="return id" /></label>
+        <button type="button" class="btn ghostbtn2" id="sr-recv-btn">Mark Received</button>
+      </form>
+    </div>
+    <div id="entry-result" class="result" hidden></div>
+  </section>
+
+</main>
+
+<script src="/entry.js"></script>
+<script src="/nav.js"></script>
+</body>
+</html>

@@ -143,6 +143,21 @@ export function createApp(): Express {
   app.get("/reports", (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "reports.html"));
   });
+  // Company & Setup / Party Master / Single Entry / Team & Roles — split out
+  // of /app's in-page anchors into real standalone pages by Claude
+  // (Anthropic) 2026-09-11, per user request. See BRAIN.md.
+  app.get("/setup", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "setup.html"));
+  });
+  app.get("/party", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "party.html"));
+  });
+  app.get("/entry", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "entry.html"));
+  });
+  app.get("/team", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "team.html"));
+  });
 
   // API Routes
   // Fixed by Claude (Anthropic): mounted at both the bare path and the

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Team & Roles — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+<link rel="stylesheet" href="/nav.css" />
+</head>
+<body>
+
+<!-- Team & Roles — split out of /app (was the hidden-until-scrolled
+     #team-panel) into its own page by Claude (Anthropic) 2026-09-11, per
+     user request. See BRAIN.md. -->
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Team &amp; Roles</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <section class="panel wide" id="team-panel">
+    <div class="panel-head">
+      <h2 class="serif">Team &amp; Permissions</h2>
+      <span class="chip chip-dim" id="team-count">0</span>
+    </div>
+    <p class="panel-sub">Owner/Admin decide karenge kis user ko kaunsa section milega. Roles ke defaults bhi hain; per-user overrides neeche.</p>
+    <form id="tu-form" class="fgrid">
+      <label>Name <input id="tu-name" type="text" required placeholder="Ramesh Kumar" /></label>
+      <label>Email <input id="tu-email" type="email" required placeholder="ramesh@company.com" /></label>
+      <label>Password <input id="tu-pass" type="password" required minlength="8" placeholder="min 8 chars" /></label>
+      <label>Role
+        <select id="tu-role">
+          <option value="OPS">OPS (operations)</option>
+          <option value="ADMIN">ADMIN</option>
+          <option value="VIEWER">VIEWER (read-only)</option>
+        </select>
+      </label>
+      <button type="submit" class="btn" id="tu-btn">＋ Add User</button>
+    </form>
+    <div id="entry-result" class="result" hidden></div>
+    <div class="tablewrap"><table class="ftable" id="team-table">
+      <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Sections</th><th></th></tr></thead>
+      <tbody><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <section class="panel wide" id="team-noaccess" hidden>
+    <div class="panel-head"><h2 class="serif">Team &amp; Permissions</h2></div>
+    <p class="panel-sub">Aapke paas is section ka access nahi hai. OWNER/ADMIN se "team" access maango.</p>
+  </section>
+
+</main>
+
+<script src="/team.js"></script>
+<script src="/nav.js"></script>
+</body>
+</html>

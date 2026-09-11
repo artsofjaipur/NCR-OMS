@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Party Master — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+<link rel="stylesheet" href="/nav.css" />
+</head>
+<body>
+
+<!-- Party Master — split out of /app's "setup-box" (a single collapsed
+     accordion that mixed brands, parties and stock-in together) into its
+     own page by Claude (Anthropic) 2026-09-11, per user request. Redesigned
+     from a bare name+dropdown into a real party directory: full contact
+     fields, an editable table, and the Stock In form that references it.
+     See BRAIN.md. -->
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Party Master</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- ==================== PARTY / SUPPLIER DIRECTORY ==================== -->
+  <section class="panel wide">
+    <div class="panel-head">
+      <h2 class="serif">Party Master</h2>
+      <span class="chip chip-dim" id="party-count">0</span>
+    </div>
+    <p class="panel-sub">Parties / suppliers jinse stock aata hai — purchase bills aur ledger inhi se link hote hain.</p>
+
+    <form id="pt-form" class="fgrid fgrid-tight">
+      <div class="fgrid-title" id="pt-form-title">＋ Add Party</div>
+      <label>Name <input id="pt-name" type="text" required placeholder="e.g. Shree Textiles" /></label>
+      <label>GSTIN <input id="pt-gstin" type="text" maxlength="15" placeholder="optional" style="text-transform:uppercase" /></label>
+      <label>Phone <input id="pt-phone" type="text" placeholder="+91 ..." /></label>
+      <label>Email <input id="pt-email" type="email" placeholder="optional" /></label>
+      <label>City <input id="pt-city" type="text" placeholder="optional" /></label>
+      <label>State <input id="pt-state" type="text" placeholder="optional" /></label>
+      <label style="grid-column:1/-1">Address Line 1 <input id="pt-addr1" type="text" placeholder="optional" /></label>
+      <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+        <button type="submit" class="btn" id="pt-save-btn">Add Party</button>
+        <button type="button" class="btn ghostbtn2" id="pt-cancel-btn" hidden>Cancel Edit</button>
+      </div>
+    </form>
+    <div id="party-result" class="result" hidden></div>
+
+    <div class="tablewrap"><table class="ftable" id="party-table">
+      <thead><tr><th>Name</th><th>GSTIN</th><th>Phone</th><th>Email</th><th>City</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ==================== STOCK IN (PURCHASE BILL) ==================== -->
+  <section class="panel wide">
+    <div class="panel-head">
+      <h2 class="serif">Stock In (Purchase Bill)</h2>
+      <span class="chip chip-dim">RECEIVE STOCK</span>
+    </div>
+    <p class="panel-sub">Kisi party se stock receive karo — inventory aur ledger dono auto-update ho jayenge.</p>
+
+    <div class="form-row two">
+      <div>
+        <label for="pi-sku">SKU</label>
+        <select id="pi-sku"><option value="">Loading SKUs…</option></select>
+      </div>
+      <div>
+        <label for="pi-qty">QTY RECEIVED</label>
+        <input type="number" id="pi-qty" min="1" placeholder="e.g. 24" />
+      </div>
+    </div>
+    <div class="form-row two">
+      <div>
+        <label for="pi-cost">UNIT COST (₹)</label>
+        <input type="number" id="pi-cost" min="0" step="0.01" placeholder="e.g. 450.00" />
+      </div>
+      <div>
+        <label for="pi-warehouse">TO WAREHOUSE</label>
+        <select id="pi-warehouse"><option value="">—</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="sup-list">PARTY (STOCK SOURCE)</label>
+      <select id="sup-list"><option value="">Loading parties…</option></select>
+    </div>
+    <button type="button" id="pi-btn" class="btn">＋ Stock In (Purchase Bill)</button>
+    <div id="setup-result" class="result" hidden></div>
+  </section>
+
+</main>
+
+<script src="/party.js"></script>
+<script src="/nav.js"></script>
+</body>
+</html>
