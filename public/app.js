@@ -49,6 +49,56 @@
 
   $("#tb-role").textContent = auth.role || "OWNER";
 
+  // ---------- live analog clock + date (topbar) — Claude (Anthropic) 2026-09-11 ----------
+  // Pure client-side (uses the browser's own local time — no server round-trip),
+  // so it keeps ticking even on a slow connection. See BRAIN.md 2026-09-11.
+  (function initLiveClock() {
+    var svgNS = "http://www.w3.org/2000/svg";
+    var ticks = $("#tb-clock-ticks");
+    var hourHand = $("#tb-clock-hour");
+    var minHand = $("#tb-clock-min");
+    var secHand = $("#tb-clock-sec");
+    var digital = $("#tb-clock-digital");
+    var dateEl = $("#tb-clock-date");
+    if (!ticks || !hourHand || !minHand || !secHand || !digital || !dateEl) return;
+
+    // 12 tick marks around the face, drawn once.
+    for (var i = 0; i < 12; i++) {
+      var angle = i * 30;
+      var isMajor = i % 3 === 0; // 12/3/6/9 get a slightly longer tick
+      var line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", "50");
+      line.setAttribute("y1", isMajor ? "6" : "8");
+      line.setAttribute("x2", "50");
+      line.setAttribute("y2", "13");
+      line.setAttribute("transform", "rotate(" + angle + " 50 50)");
+      if (isMajor) line.style.strokeWidth = "3";
+      ticks.appendChild(line);
+    }
+
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+    var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    var MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    function tick() {
+      var now = new Date();
+      var h = now.getHours() % 12;
+      var m = now.getMinutes();
+      var s = now.getSeconds();
+
+      hourHand.style.transform = "rotate(" + (h * 30 + m * 0.5) + "deg)";
+      minHand.style.transform = "rotate(" + (m * 6 + s * 0.1) + "deg)";
+      secHand.style.transform = "rotate(" + (s * 6) + "deg)";
+
+      var h12 = now.getHours() % 12 || 12;
+      var ampm = now.getHours() < 12 ? "AM" : "PM";
+      digital.textContent = pad(h12) + ":" + pad(m) + ":" + pad(s) + " " + ampm;
+      dateEl.textContent = DOW[now.getDay()] + ", " + now.getDate() + " " + MON[now.getMonth()] + " " + now.getFullYear();
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
+
   $("#logout-btn").addEventListener("click", function () {
     sessionStorage.removeItem("ncr_auth");
     window.location.href = "/login.html";

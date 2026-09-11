@@ -46,11 +46,39 @@ body {
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
 }
-.tb-left { display: flex; align-items: center; gap: 12px; }
+.tb-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .tb-logo { width: 34px; height: 34px; object-fit: contain; }
 .tb-name { font-size: 19px; font-weight: 700; letter-spacing: 0.5px; }
 .tb-name span { color: var(--gold); }
 .tb-right { display: flex; align-items: center; gap: 14px; }
+
+/* ---------- live analog clock + date (topbar) — Claude (Anthropic) 2026-09-11 ---------- */
+.tb-clock {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 3px 10px 3px 3px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(216, 180, 92, 0.05);
+}
+.tb-clock-face { width: 30px; height: 30px; flex: none; }
+.tb-clock-ring { fill: rgba(11, 14, 19, 0.9); stroke: var(--gold2); stroke-width: 3; }
+.tb-clock-ticks line { stroke: rgba(216, 180, 92, 0.55); stroke-width: 2; stroke-linecap: round; }
+.tb-clock-hand { stroke-linecap: round; transform-origin: 50px 50px; }
+.tb-clock-hour { stroke: var(--text); stroke-width: 4.5; }
+.tb-clock-min { stroke: var(--text); stroke-width: 3.2; }
+.tb-clock-sec { stroke: var(--gold); stroke-width: 1.6; }
+.tb-clock-pin { fill: var(--gold); }
+.tb-clock-text { display: flex; flex-direction: column; line-height: 1.25; }
+.tb-clock-time { font-size: 13px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.tb-clock-date { font-size: 10px; color: var(--muted); letter-spacing: 0.3px; }
+@media (max-width: 640px) {
+  .tb-clock { padding: 2px 8px 2px 2px; }
+  .tb-clock-face { width: 26px; height: 26px; }
+  .tb-clock-time { font-size: 11.5px; }
+  .tb-clock-date { font-size: 9px; }
+}
 .tb-company { font-size: 13px; color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-role {
   font-size: 10px; letter-spacing: 1.5px; padding: 4px 10px;

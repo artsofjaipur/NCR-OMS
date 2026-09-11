@@ -19,6 +19,23 @@
   <div class="tb-left">
     <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
     <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <!-- Live analog clock + date — added by Claude (Anthropic) 2026-09-11.
+         Sits right under/beside the brand mark, stays sticky with the
+         topbar so it's always in view above the Upload Orders panel. -->
+    <div class="tb-clock" id="tb-clock" aria-label="Live clock">
+      <svg viewBox="0 0 100 100" class="tb-clock-face">
+        <circle cx="50" cy="50" r="47" class="tb-clock-ring"></circle>
+        <g class="tb-clock-ticks" id="tb-clock-ticks"></g>
+        <line id="tb-clock-hour" x1="50" y1="50" x2="50" y2="30" class="tb-clock-hand tb-clock-hour"></line>
+        <line id="tb-clock-min" x1="50" y1="50" x2="50" y2="20" class="tb-clock-hand tb-clock-min"></line>
+        <line id="tb-clock-sec" x1="50" y1="50" x2="50" y2="15" class="tb-clock-hand tb-clock-sec"></line>
+        <circle cx="50" cy="50" r="2.6" class="tb-clock-pin"></circle>
+      </svg>
+      <div class="tb-clock-text">
+        <div class="tb-clock-time" id="tb-clock-digital">--:--:--</div>
+        <div class="tb-clock-date" id="tb-clock-date">—</div>
+      </div>
+    </div>
   </div>
   <div class="tb-right">
     <span class="tb-company" id="tb-company"></span>
