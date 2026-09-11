@@ -150,6 +150,34 @@ body.has-nav {
 }
 .np-actions a:hover, .np-actions button:hover { background: rgba(212,175,55,.14); color: #f6d466; }
 
+/* ---------- workspace (company) switcher — added by Claude (Anthropic) 2026-09-11 ---------- */
+.np-switch {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 11px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  border: 1px solid rgba(212,175,55,.35);
+  background: rgba(212,175,55,.08);
+  color: #f2ecdc;
+  font-family: inherit;
+  cursor: pointer;
+}
+.np-switch option { background: #14142a; color: #f2ecdc; }
+.np-add-company {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 10.5px;
+  padding: 4px 0;
+  border-radius: 7px;
+  border: 1px dashed rgba(212,175,55,.4);
+  background: transparent;
+  color: rgba(212,175,55,.85);
+  cursor: pointer;
+  font-family: inherit;
+}
+.np-add-company:hover { background: rgba(212,175,55,.1); color: #f6d466; }
+
 /* ---------- assistant floating widget ---------- */
 .asst-fab {
   position: fixed;

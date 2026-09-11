@@ -65,6 +65,11 @@
     '<span><span class="np-name">' + (auth.displayName || auth.email || "") + "</span><br/>" +
     '<span class="np-role">' + auth.role + "</span></span></div>" +
     (auth.companyName ? '<div class="np-company">' + auth.companyName + "</div>" : "") +
+    // Populated after mount from GET /auth/my-companies — hidden until there's
+    // more than one company to switch between, so a single-company workspace
+    // sees no change. "Baar baar login" gap: see BRAIN.md 2026-09-11.
+    '<select class="np-switch" id="np-switch" hidden></select>' +
+    (auth.role === "OWNER" ? '<button type="button" class="np-add-company" id="np-add-company">+ Add Company</button>' : "") +
     '<div class="np-actions"><a href="/app">Dashboard</a><button type="button" id="nav-logout">Logout</button></div>' +
     "</div>";
   side.innerHTML = html;
@@ -82,6 +87,69 @@
     sessionStorage.removeItem("ncr_auth");
     window.location.href = "/login.html";
   });
+
+  /* ---------------- workspace (company) switcher ---------------- */
+  // Merges a switch/add-company response into the stored session and
+  // reloads — every panel on the page refetches for the new company rather
+  // than trying to patch itself in place.
+  function applySwitchedAuth(data) {
+    var next = Object.assign({}, auth, {
+      token: data.token,
+      companyId: data.companyId,
+      role: data.role || auth.role,
+      displayName: data.displayName || auth.displayName,
+      companyName: data.companyName,
+      permissions: data.permissions || [],
+    });
+    sessionStorage.setItem("ncr_auth", JSON.stringify(next));
+    window.location.reload();
+  }
+
+  var switchSel = document.getElementById("np-switch");
+  api("/auth/my-companies").then(function (r) {
+    if (!r || !r.ok || !Array.isArray(r.data) || r.data.length < 2) return; // nothing to switch between
+    switchSel.innerHTML = r.data
+      .map(function (c) { return '<option value="' + c.companyId + '"' + (c.current ? " selected" : "") + ">" + c.companyName + " (" + c.role + ")</option>"; })
+      .join("");
+    switchSel.hidden = false;
+  }).catch(function () {});
+
+  switchSel.addEventListener("change", function () {
+    var companyId = Number(switchSel.value);
+    if (!companyId || companyId === auth.companyId) return;
+    switchSel.disabled = true;
+    api("/auth/switch-company", { method: "POST", body: { companyId: companyId } }).then(function (r) {
+      if (r && r.ok && r.data) {
+        applySwitchedAuth(r.data);
+      } else {
+        switchSel.disabled = false;
+        alert((r && r.data && r.data.error) || "Company switch nahi ho paya — dobara try karein.");
+      }
+    }).catch(function () {
+      switchSel.disabled = false;
+      alert("Network issue — dobara try karein.");
+    });
+  });
+
+  var addBtn = document.getElementById("np-add-company");
+  if (addBtn) {
+    addBtn.addEventListener("click", function () {
+      var name = window.prompt("Nayi company ka legal name likhein (jaise \"Rugara Pvt Ltd\"):");
+      if (!name || !name.trim()) return;
+      addBtn.disabled = true;
+      api("/companies", { method: "POST", body: { legalName: name.trim() } }).then(function (r) {
+        if (r && r.ok && r.data) {
+          applySwitchedAuth(r.data);
+        } else {
+          addBtn.disabled = false;
+          alert((r && r.data && r.data.error) || "Company add nahi ho payi — dobara try karein.");
+        }
+      }).catch(function () {
+        addBtn.disabled = false;
+        alert("Network issue — dobara try karein.");
+      });
+    });
+  }
 
   // in-page deep links: open the target panel/section on /app
   side.querySelectorAll(".nav-link[data-inpage]").forEach(function (a) {

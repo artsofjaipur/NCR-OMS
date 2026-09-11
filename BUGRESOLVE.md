@@ -187,6 +187,81 @@ Every router in `src/app.ts` is now mounted at **both** its bare path (`/orders`
 
 ---
 
+## Bug #5 — `drizzle-kit` devDependency badly out of date vs `drizzle-orm`
+
+- **Status:** ✅ RESOLVED
+- **Date resolved:** 2026-09-11
+- **Fixed by:** Claude (Anthropic)
+- **Severity:** P2 — not yet causing a live failure, but a latent risk: `drizzle-kit@^0.18.1` alongside `drizzle-orm@^0.45.2` is a large generation gap between the CLI and the ORM it drives, which tends to surface as confusing/incorrect diffs or outright incompatibility in `drizzle-kit generate`/`push`/`studio` rather than a clean error pointing at the real cause.
+
+### Symptom
+No live crash yet — found during a version audit. `package.json` had `drizzle-orm: ^0.45.2` (upgraded in an earlier pass, per an intentionally-fixed SQL-injection CVE) but `drizzle-kit` was left at `^0.18.1`, a version predating that orm series.
+
+### Root Cause
+The two packages were upgraded independently at different times without re-checking that they're still a matched pair — `drizzle-kit`'s CLI behavior (schema introspection, migration generation) is versioned against specific `drizzle-orm` internals, so a large gap between them is a real (if latent) compatibility risk, not just a cosmetic mismatch.
+
+### Fix
+Bumped `drizzle-kit` to `^0.31.10` (current latest as of this fix, confirmed via `npm view drizzle-kit version`).
+
+### Files Changed
+- `package.json`
+
+### Verification
+```
+$ npm install
+added 179 packages
+
+$ npx tsc -p tsconfig.json --noEmit
+# 0 errors
+
+$ npx drizzle-kit generate --config=drizzle.config.ts
+25 tables ... [✓] Your SQL migration file ➜ ...
+```
+`drizzle-kit generate` itself now runs cleanly end-to-end (previously untested against this version pairing). **Note:** the generated migration also surfaced a separate, pre-existing issue — the `drizzle/meta` snapshots are out of sync with the live schema (columns applied via hand-written SQL / `drizzle-kit push` were never captured by `drizzle-kit generate`). That drift is not part of this bug; it's tracked as Known Open Issue #7 in `BRAIN.md`.
+
+---
+
+## Bug #6 — Company Setup showed only one company at a time; adding a second company made the first "disappear"
+
+- **Status:** ✅ RESOLVED
+- **Date resolved:** 2026-09-11
+- **Fixed by:** Claude (Anthropic)
+- **Severity:** P1 — not data loss (nothing was ever actually deleted), but a severe usability/trust bug: OWNER/ADMIN/OPS users with more than one legal entity (Nyko Mart / Casa Arra / Rugara) had no way to see, reach, or add a second company without either a fresh unrelated signup or logging out and back in, and the UI gave every appearance that the previously-filled-in company profile had been wiped.
+
+### Symptom
+User report (verbatim): "jitni company setup hai vo dikhni chahiye lekin nahi dikhti, ek time par ek hi dikhti hai... company save hojati hai... phir dusri company add karte hai to pahle vali ka koi ata pata nahi hota hai."
+
+### Root Cause
+The system was architected one-company-per-login: a session JWT is permanently scoped to a single `companyId` (`signSession({userId, companyId, role})`), and there was no endpoint to list the companies a user belonged to or switch between them post-login. `POST /auth/register` also checks email uniqueness globally (`eq(users.email, body.email)`), even though the DB's actual constraint is per-company (`uniqueIndex("users_company_email_uq").on(companyId, email)`) — the schema was always designed to allow one email to be an active OWNER of multiple companies, but the application never exposed a safe way to use that. So the first company's data was never touched or lost; the user simply had no route back to it except a real re-login with different credentials, and there was no legitimate way to add a second company under the same identity at all.
+
+### Fix
+Added three new endpoints and matching frontend UI:
+- `POST /companies` (`src/routes/companies.ts`, OWNER-only) — creates an additional company under the caller's existing email + password hash (reused, not a new signup), returns a session token already switched to it.
+- `GET /auth/my-companies` (`src/routes/auth.ts`) — lists every company the current session's email has an active user row in.
+- `POST /auth/switch-company` (`src/routes/auth.ts`) — re-issues a JWT scoped to a different company, only when the current session's email has its own active row there (403 otherwise); no password re-entry needed.
+- `public/nav.js` + `public/nav.css` — sidebar workspace `<select>` (hidden when there's only one company) wired to the switch endpoint, plus an OWNER-only "+ Add Company" button wired to the create endpoint.
+
+### Files Changed
+- `src/routes/companies.ts`
+- `src/routes/auth.ts`
+- `public/nav.js`
+- `public/nav.css`
+
+### Verification
+```
+$ npx tsc -p tsconfig.json --noEmit
+# 0 errors
+
+$ node --check public/nav.js
+# syntax OK
+
+$ npx vitest run tests/ingestion.test.ts tests/security.test.ts
+✓ 18/18 pass
+```
+Live end-to-end against a real, disposable local PostgreSQL 16 (register → add 2nd + 3rd company under the same email → `GET /auth/my-companies` lists all 3 with the correct `current` flag → switch away and back to the 1st company → confirm its earlier-saved profile fields are still fully intact → attempt an unauthorized switch to a company with no user row for this email → correctly rejected `403 {"error":"You don't have an account in that company"}`). Full transcript in `BRAIN.md` § 2, 2026-09-11 entry.
+
+---
+
 ## How to Add a New Entry
 
 When you fix a real bug in this repo:
