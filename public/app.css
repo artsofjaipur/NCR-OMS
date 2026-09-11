@@ -137,6 +137,10 @@ body {
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 22px;
+  min-width: 0; /* grid items default to min-width:auto (their content's
+    min-content size), which let long panel-sub text push .upload-panel
+    wider than the viewport instead of wrapping — found on phone width
+    while testing the Company Profile change. Claude (Anthropic) 2026-09-11. */
   transition: border-color 0.3s;
 }
 .panel:hover { border-color: var(--line2); }
@@ -150,6 +154,38 @@ body {
   border: 1px solid rgba(216, 180, 92, 0.4); padding: 4px 10px; border-radius: 999px;
 }
 .chip-dim { color: var(--muted); border-color: var(--line2); }
+
+/* ---------- company profile: one-line summary + expand — Claude (Anthropic) 2026-09-11 ---------- */
+.cp-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  transition: border-color 0.2s, background 0.2s;
+}
+.cp-summary-row:hover { border-color: var(--gold2); background: rgba(216, 180, 92, 0.05); }
+.cp-summary-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cp-summary-text b { font-family: var(--serif); font-size: 16px; }
+.cp-summary-text .small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-summary-cta { font-size: 12px; font-weight: 600; color: var(--gold); flex: none; }
+.cp-summary-row[aria-expanded="true"] .cp-summary-cta::after { content: ""; }
+
+.cp-danger { border: 1px solid rgba(229, 105, 122, 0.3); border-radius: 12px; padding: 14px 16px !important; margin-top: 6px; }
+
+/* Grid items default to min-width:auto (their content's min-content size),
+   which lets a long email/name row silently push the whole panel wider
+   than the viewport instead of wrapping. Found while testing the "Who Can
+   Access This Company" block — Claude (Anthropic) 2026-09-11. */
+#cp-access-list, #cp-danger-block { min-width: 0; }
 
 /* ---------- upload form ---------- */
 .form-row { margin-bottom: 14px; }

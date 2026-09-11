@@ -6,16 +6,18 @@
  * without a brand-new, unrelated `/auth/register` signup — and no way to
  * switch back without logging out and back in. Pairs with `GET
  * /auth/my-companies` + `POST /auth/switch-company` in `src/routes/auth.ts`.
+ * `DELETE /me` added the same day — see the guard rationale on that route.
  */
 import { Router } from "express";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { companies, bankAccounts, brands, marketplaceAccounts, orders, skus, users, warehouses } from "../db/schema";
+import { companies, bankAccounts, brands, expenses, marketplaceAccounts, orders, purchaseEntries, skus, users, warehouses } from "../db/schema";
 import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
 import { encrypt, encryptJson } from "../security/crypto";
 import { HttpError } from "../middleware/errorHandler";
 import { signSession } from "../security/jwt";
+import { resolveSections } from "../security/permissions";
 
 export const companiesRouter = Router();
 companiesRouter.use(requireAuth, requireCompanyScope);
@@ -90,6 +92,104 @@ companiesRouter.get("/me", async (req, res, next) => {
     res.json({
       ...company,
       bankAccounts: accounts.map(({ accountNumberEncrypted, ...rest }) => ({ ...rest, accountNumberMasked: "••••" })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Delete the CURRENT session's company — OWNER-only, and deliberately
+ * conservative: most `companyId` foreign keys in this schema cascade-delete
+ * (brands, marketplace accounts, orders, warehouses, SKUs...), so a plain
+ * `DELETE FROM companies` would silently wipe real order/return/shipment
+ * history if we let it. Refused (409) instead whenever there's any real
+ * business activity — same "never silently destroy data" pattern as brand/
+ * supplier/warehouse deletion elsewhere in this router. Also refused when
+ * this is the caller's only company (an identity must always have at least
+ * one to log into). On success the session is switched to another company
+ * under the same identity, same response shape as `POST /auth/switch-company`.
+ */
+companiesRouter.delete("/me", requireRole("OWNER"), async (req, res, next) => {
+  try {
+    const companyId = req.session!.companyId;
+
+    const [me] = await db.select({ email: users.email }).from(users).where(eq(users.id, req.session!.userId)).limit(1);
+    if (!me) throw new HttpError(404, "Current user not found");
+
+    const siblingRows = await db
+      .select({ companyId: users.companyId })
+      .from(users)
+      .where(and(eq(users.email, me.email), eq(users.isActive, true)));
+    const hasAnotherCompany = siblingRows.some((r) => r.companyId !== companyId);
+    if (!hasAnotherCompany) {
+      throw new HttpError(
+        409,
+        "Yeh aapki akeli company hai — kam se kam ek company hamesha honi chahiye. Pehle ek aur company banao, phir ise delete karein.",
+      );
+    }
+
+    const [orderHit] = await db
+      .select({ id: orders.id })
+      .from(orders)
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .where(eq(brands.companyId, companyId))
+      .limit(1);
+    const [purchaseHit] = await db.select({ id: purchaseEntries.id }).from(purchaseEntries).where(eq(purchaseEntries.companyId, companyId)).limit(1);
+    // expenses is brand-scoped (no direct companyId), so reach it via brands.
+    const [expenseHit] = await db
+      .select({ id: expenses.id })
+      .from(expenses)
+      .innerJoin(brands, eq(brands.id, expenses.brandId))
+      .where(eq(brands.companyId, companyId))
+      .limit(1);
+    if (orderHit || purchaseHit || expenseHit) {
+      throw new HttpError(
+        409,
+        "Is company me orders/purchases/expenses ka real data hai, isliye safety ke liye delete nahi ho sakti. Sirf ek khaali/galti se bani company delete ho sakti hai.",
+      );
+    }
+
+    const [deletedCompany] = await db
+      .select({ displayName: companies.displayName })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .limit(1);
+
+    // Cascades remove this company's own users/brands/warehouses/bank
+    // accounts/etc. with it — the checks above already ruled out anything
+    // with real transactional history.
+    await db.delete(companies).where(eq(companies.id, companyId));
+
+    const [fallback] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.email, me.email), eq(users.isActive, true)))
+      .limit(1);
+    if (!fallback) {
+      // Shouldn't happen given the hasAnotherCompany check above, but don't
+      // leave the client holding a session scoped to a company that no
+      // longer exists.
+      throw new HttpError(500, "Company deleted, but no fallback workspace could be found. Please log in again.");
+    }
+
+    const token = signSession({ userId: fallback.id, companyId: fallback.companyId, role: fallback.role });
+    const [fallbackCompany] = await db
+      .select({ displayName: companies.displayName })
+      .from(companies)
+      .where(eq(companies.id, fallback.companyId))
+      .limit(1);
+
+    res.json({
+      deletedCompanyName: deletedCompany?.displayName ?? null,
+      token,
+      userId: fallback.id,
+      companyId: fallback.companyId,
+      role: fallback.role,
+      displayName: fallback.displayName,
+      companyName: fallbackCompany?.displayName ?? null,
+      permissions: await resolveSections({ session: { userId: fallback.id, role: fallback.role } } as never),
     });
   } catch (err) {
     next(err);

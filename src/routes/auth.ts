@@ -58,7 +58,12 @@ authRouter.post("/register", async (req, res, next) => {
     const result = await db.transaction(async (tx) => {
       const [company] = await tx
         .insert(companies)
-        .values({ legalName: body.companyName, displayName: body.displayName ?? body.companyName })
+        // Bug fix 2026-09-11 (found while testing DELETE /companies/me — see
+        // BUGRESOLVE.md Bug #7): this used to fall back to body.displayName,
+        // which is the PERSON's name, not the company's — so a company's own
+        // profile silently showed the owner's name instead of the company
+        // name whenever a display name was given at signup.
+        .values({ legalName: body.companyName, displayName: body.companyName })
         .returning({ id: companies.id });
 
       // Every company needs a default warehouse for stock ledger entries.

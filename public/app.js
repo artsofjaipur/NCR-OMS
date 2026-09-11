@@ -256,6 +256,97 @@
       $("#cp-save-btn").disabled = true;
       $("#cp-readonly-note").hidden = false;
     }
+
+    // One-line summary shown before the profile is expanded — Claude (Anthropic) 2026-09-11.
+    $("#cp-summary-name").textContent = c.displayName || c.legalName || "Unnamed company";
+    var metaBits = [];
+    metaBits.push(c.gstin ? "GSTIN " + c.gstin : "GSTIN —");
+    metaBits.push(c.phone ? c.phone : "Phone —");
+    metaBits.push(c.city ? c.city : "City —");
+    $("#cp-summary-meta").textContent = metaBits.join(" · ");
+  }
+
+  // ---------- company profile: collapsed summary <-> full form toggle ----------
+  var cpDetails = $("#cp-details");
+  var cpToggle = $("#cp-summary-toggle");
+  cpToggle.addEventListener("click", function () {
+    var open = cpDetails.hidden; // currently hidden -> about to open
+    cpDetails.hidden = !open;
+    cpToggle.setAttribute("aria-expanded", String(open));
+    $("#cp-summary-cta").textContent = open ? "Hide Profile ▴" : "View Profile ▾";
+    if (open) {
+      loadCompanyAccessList();
+      cpDetails.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  });
+
+  $("#cp-access-manage-link").addEventListener("click", function (e) {
+    e.preventDefault();
+    var panel = document.getElementById("team-panel");
+    if (panel) {
+      panel.hidden = false;
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+
+  // "Who can access this company" — reuses the same /users endpoint the Team
+  // & Roles panel uses (session already company-scoped), read-only here.
+  // Gated OWNER/ADMIN server-side, same as Team & Roles — Claude (Anthropic) 2026-09-11.
+  var cpAccessLoaded = false;
+  function loadCompanyAccessList() {
+    if (cpAccessLoaded) return;
+    cpAccessLoaded = true;
+    api("/users").then(function (r) {
+      if (!r.ok || !Array.isArray(r.data)) {
+        $("#cp-access-list").textContent = "Sirf OWNER/ADMIN ye list dekh sakte hain.";
+        return;
+      }
+      var rows = r.data.filter(function (u) { return u.isActive !== false; });
+      if (rows.length === 0) {
+        $("#cp-access-list").textContent = "Koi user nahi mila.";
+        return;
+      }
+      $("#cp-access-list").innerHTML = rows.map(function (u) {
+        return "<div style='display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 10px;padding:4px 0;border-bottom:1px solid var(--line)'>" +
+          "<span style='min-width:0;overflow-wrap:anywhere'>" + esc(u.displayName || u.email) + " <span style='color:var(--muted)'>(" + esc(u.email) + ")</span></span>" +
+          "<span class='pill pill-ok' style='flex:none'>" + esc(u.role) + "</span>" +
+          "</div>";
+      }).join("");
+    }).catch(function () {
+      $("#cp-access-list").textContent = "Access list load nahi ho payi.";
+    });
+  }
+
+  // ---------- delete company (OWNER-only, server enforces the real guards) ----------
+  if (auth.role === "OWNER") {
+    $("#cp-danger-block").hidden = false;
+    $("#cp-delete-btn").addEventListener("click", function () {
+      var name = $("#cp-summary-name").textContent || "is company";
+      if (!window.confirm("Pakka delete karna hai \"" + name + "\"? Yeh sirf tabhi hoga jab isme koi order/purchase/expense history na ho. Yeh action undo nahi ho sakta.")) return;
+      var btn = $("#cp-delete-btn");
+      btn.disabled = true;
+      api("/companies/me", { method: "DELETE" }).then(function (r) {
+        if (r.ok && r.data && r.data.token) {
+          var next = Object.assign({}, auth, {
+            token: r.data.token,
+            companyId: r.data.companyId,
+            role: r.data.role || auth.role,
+            displayName: r.data.displayName || auth.displayName,
+            companyName: r.data.companyName,
+            permissions: r.data.permissions || [],
+          });
+          sessionStorage.setItem("ncr_auth", JSON.stringify(next));
+          window.alert((r.data.deletedCompanyName || "Company") + " delete ho gayi. Ab \"" + (r.data.companyName || "") + "\" workspace khul raha hai.");
+          window.location.reload();
+        } else {
+          btn.disabled = false;
+          cpMsg("err", (r.data && r.data.error) || "Delete nahi ho payi.");
+        }
+      }).catch(function () {
+        btn.disabled = false;
+        cpMsg("err", "Network issue — dobara try karein.");
+      });
+    });
   }
 
   function loadCompanyProfile() {

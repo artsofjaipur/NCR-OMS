@@ -170,24 +170,43 @@
   });
 
   /* ---------------- assistant widget ---------------- */
+  // Hourly-rotating avatar in place of the old 🤖 emoji — 12 pose variants,
+  // each gets a 1-hour "shift" (hour % 12), so the icon cycles twice a day.
+  // Assistant copy converted from Hinglish to English at the same time.
+  // Claude (Anthropic) 2026-09-11, see BRAIN.md.
+  function assistantAvatarSrc() {
+    var slot = (new Date().getHours() % 12) + 1;
+    return "/brand/assistant/avatar-" + (slot < 10 ? "0" + slot : slot) + ".jpg";
+  }
+
   var panel = document.createElement("div");
   panel.className = "asst-panel";
   panel.hidden = true;
   panel.innerHTML =
-    '<div class="asst-head"><span class="ah-ico">🤖</span>' +
-    '<div><div class="ah-title">OMS Assistant</div><div class="ah-sub">Hinglish me poocho — live data se jawab</div></div>' +
+    '<div class="asst-head"><img class="ah-ico" id="ah-ico" alt="" />' +
+    '<div><div class="ah-title">OMS Assistant</div><div class="ah-sub">Ask about your orders, or anything else</div></div>' +
     '<button type="button" id="asst-close">✕</button></div>' +
     '<div class="asst-alerts" id="asst-alerts"></div>' +
-    '<div class="asst-chat" id="asst-chat"><div class="asst-msg bot">Namaste! Main tumhara OMS assistant hoon. 👋\nNeeche quick chips ya seedha poocho: "aaj kitne order aaye?"</div></div>' +
+    '<div class="asst-chat" id="asst-chat"><div class="asst-msg bot">Hello! I\'m your OMS assistant. 👋\nUse the quick chips below or just ask: "how many orders came in today?"</div></div>' +
     '<div class="asst-chips" id="asst-chips"></div>' +
-    '<div class="asst-input"><input id="asst-q" type="text" placeholder="e.g. pending dispatch kitna?" /><button type="button" id="asst-send">➤</button></div>';
+    '<div class="asst-input"><input id="asst-q" type="text" placeholder="e.g. how much pending dispatch?" /><button type="button" id="asst-send">➤</button></div>';
 
   var fab = document.createElement("button");
   fab.type = "button";
   fab.className = "asst-fab";
-  fab.innerHTML = '🤖<span class="a-dot" id="asst-dot"></span>';
+  fab.innerHTML = '<img class="fab-avatar" id="fab-avatar" alt="" /><span class="a-dot" id="asst-dot"></span>';
   document.body.appendChild(fab);
   document.body.appendChild(panel);
+
+  function refreshAssistantAvatar() {
+    var src = assistantAvatarSrc();
+    var a = document.getElementById("fab-avatar");
+    var b = document.getElementById("ah-ico");
+    if (a && a.getAttribute("src") !== src) a.src = src;
+    if (b && b.getAttribute("src") !== src) b.src = src;
+  }
+  refreshAssistantAvatar();
+  setInterval(refreshAssistantAvatar, 60000); // cheap check — actual image only changes on the hour
 
   function api(path, options) {
     options = options || {};
@@ -212,8 +231,8 @@
   function ask(q) {
     push(q, "user");
     api("/assistant/query", { method: "POST", body: { question: q } }).then(function (r) {
-      push((r && r.data && r.data.answer) || "Server se jawab nahi aaya — thodi der baad try karo.", "bot");
-    }).catch(function () { push("Network issue — dobara try karo.", "bot"); });
+      push((r && r.data && r.data.answer) || "No response from the server — please try again shortly.", "bot");
+    }).catch(function () { push("Network issue — please try again.", "bot"); });
   }
 
   panel.querySelector("#asst-send").addEventListener("click", function () {
@@ -237,7 +256,7 @@
   });
 
   // quick chips
-  var CHIPS = ["aaj ke orders", "pending dispatch", "payout status", "party outstanding", "low stock", "brand-wise sale"];
+  var CHIPS = ["today's orders", "pending dispatch", "payout status", "party outstanding", "low stock", "brand-wise sale"];
   var chipBox = panel.querySelector("#asst-chips");
   CHIPS.forEach(function (c) {
     var b = document.createElement("button");

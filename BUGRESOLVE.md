@@ -262,6 +262,36 @@ Live end-to-end against a real, disposable local PostgreSQL 16 (register → add
 
 ---
 
+## Bug #7 — `POST /auth/register` set the COMPANY's displayName from the PERSON's displayName
+
+- **Status:** ✅ RESOLVED
+- **Date resolved:** 2026-09-11
+- **Fixed by:** Claude (Anthropic)
+- **Severity:** P2 — no data loss, but a real, silently-wrong-data bug: any company registered while also giving a personal display name would show the person's name as the company name everywhere the company's `displayName` is read (topbar, invoices, the new Company Profile one-line summary).
+
+### Symptom
+Found while building the Company Profile one-line summary (see the 2026-09-11 Change Log entry): a test registration with `{companyName: "Company A", displayName: "Ram"}` produced a company row whose `displayName` was `"Ram"`, not `"Company A"`.
+
+### Root Cause
+```ts
+.values({ legalName: body.companyName, displayName: body.displayName ?? body.companyName })
+```
+`body.displayName` here is the **registering person's** own display name (also correctly used a few lines later for the `users` row). Because it was reused as the fallback for the company's own `displayName`, giving a personal name at signup silently overwrote the company's display name with it whenever both fields were present — which is the common case, not an edge case.
+
+### Fix
+```ts
+.values({ legalName: body.companyName, displayName: body.companyName })
+```
+The company's `displayName` now always comes from `body.companyName`; the person's own `displayName` is only ever written to their `users` row, where it already was.
+
+### Files Changed
+- `src/routes/auth.ts`
+
+### Verification
+Live end-to-end against a real, disposable local PostgreSQL 16 (part of the same DELETE /companies/me verification run): registered a company with both `companyName: "Company A"` and `displayName: "Ram"` → the company's own `displayName` (returned via `GET /auth/my-companies` and the delete-company response's `deletedCompanyName`) correctly showed `"Company A"`, not `"Ram"`.
+
+---
+
 ## How to Add a New Entry
 
 When you fix a real bug in this repo:

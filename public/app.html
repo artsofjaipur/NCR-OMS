@@ -129,14 +129,27 @@
     </section>
 
     <!-- ==================== COMPANY PROFILE ==================== -->
+    <!-- Collapsed one-line summary by default; "View Profile" opens the full
+         form + bank accounts + access list + delete — added by Claude
+         (Anthropic) 2026-09-11, see BRAIN.md. Previously the whole form was
+         always expanded, which made the panel unreadable once GST/address/
+         bank fields were filled in. -->
     <section class="panel wide" id="company-profile-panel">
       <div class="panel-head">
         <h2 class="serif">Company Profile</h2>
         <span class="chip chip-dim" id="cp-prefix-chip">—</span>
       </div>
-      <p class="panel-sub">Company ki details, order reference prefix (PO NO. / RF NO. / RG NO.), GST/IEC aur bank accounts — invoice aur export ke liye.</p>
+      <p class="panel-sub">Company ki details, order reference prefix (PO NO. / RF NO. / RG NO.), GST/IEC, bank accounts aur access — invoice aur export ke liye.</p>
 
-      <div class="notes-grid">
+      <button type="button" class="cp-summary-row" id="cp-summary-toggle" aria-expanded="false" aria-controls="cp-details">
+        <span class="cp-summary-text">
+          <b id="cp-summary-name">—</b>
+          <span id="cp-summary-meta" class="small">Loading…</span>
+        </span>
+        <span class="cp-summary-cta" id="cp-summary-cta">View Profile ▾</span>
+      </button>
+
+      <div class="notes-grid" id="cp-details" hidden>
         <form id="cp-form" class="fgrid fgrid-tight">
           <div class="fgrid-title">Company Details</div>
           <label>Legal Name <input id="cp-legal" type="text" /></label>
@@ -158,7 +171,7 @@
         </form>
 
         <div class="fgrid fgrid-tight">
-          <div class="fgrid-title">Bank Accounts (invoice auto-fill)</div>
+          <div class="fgrid-title">Bank Accounts (invoice auto-fill) <span class="small" style="color:var(--muted);font-weight:400">— optional</span></div>
           <div id="cp-banks" class="brand-list" style="grid-template-columns:1fr"></div>
           <details style="margin-top:6px">
             <summary class="small">＋ Add bank account</summary>
@@ -172,6 +185,26 @@
               <button type="button" class="btn ghostbtn2" id="bk-add-btn" style="grid-column:1/-1">Add Bank Account</button>
             </div>
           </details>
+        </div>
+
+        <!-- Who can access this company — Claude (Anthropic) 2026-09-11.
+             grid-column:1/-1 on every child here matters: .fgrid uses
+             grid-template-columns: repeat(auto-fit, minmax(150px,1fr)), so
+             without it these would sit side-by-side as separate columns
+             instead of stacking. -->
+        <div class="fgrid fgrid-tight" style="grid-column:1/-1">
+          <div class="fgrid-title">Who Can Access This Company</div>
+          <div id="cp-access-list" class="small" style="grid-column:1/-1;color:var(--muted)">Loading…</div>
+          <a href="#" class="small" id="cp-access-manage-link" style="grid-column:1/-1;display:inline-block;margin-top:8px;color:var(--gold);text-decoration:none">Manage team &amp; permissions →</a>
+        </div>
+
+        <!-- Delete company — OWNER-only, guarded server-side against real
+             business history and against deleting your only company.
+             Claude (Anthropic) 2026-09-11. -->
+        <div class="fgrid fgrid-tight cp-danger" id="cp-danger-block" style="grid-column:1/-1" hidden>
+          <div class="fgrid-title" style="color:var(--red)">Danger Zone</div>
+          <p class="small" style="grid-column:1/-1;color:var(--muted);margin-bottom:10px">Delete sirf tabhi hoti hai jab is company me koi order/purchase/expense history na ho, aur aapki kam se kam ek aur company ho.</p>
+          <button type="button" class="btn ghostbtn2" id="cp-delete-btn" style="grid-column:1/-1;justify-self:start;border-color:var(--red);color:var(--red)">Delete This Company</button>
         </div>
       </div>
       <div id="cp-result" class="result" hidden></div>
