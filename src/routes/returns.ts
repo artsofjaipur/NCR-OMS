@@ -1,3 +1,9 @@
+/**
+ * Return sheet import + return lifecycle endpoints.
+ * Return-type/reason capture + expanded Flipkart/Meesho header matching
+ * added by Claude (Anthropic) — see BRAIN.md 2026-09-11 entry and Known
+ * Open Issue #2 (RTO/return field mapping was Snapdeal-only before this).
+ */
 import { Router } from "express";
 import { z } from "zod";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -75,12 +81,78 @@ const importSchema = z.object({
   csv: z.string().min(5).max(5_000_000),
 });
 
-// Header spellings seen across marketplace return reports.
-const ORDER_KEYS = ["order id", "order no", "order number", "orderid", "sub order no", "suborder no", "order_item_id", "order item id"];
-const AWB_KEYS = ["awb", "awb number", "reverse awb", "reverse awb number", "tracking id", "awbno"];
-const DATE_KEYS = ["return date", "date", "initiated date", "return initiated date", "rma date", "created at"];
-const CARRIER_KEYS = ["courier", "carrier", "reverse courier", "courier name", "logistics partner"];
-const STATUS_KEYS = ["return status", "status", "reason"];
+// Header spellings seen across marketplace return reports. Verified live
+// against a real Snapdeal return sheet; Flipkart and Meesho variants below
+// are best-effort from their published seller-panel report layouts and have
+// NOT yet been run against a real Flipkart/Meesho return-report CSV — if a
+// real one turns up a header this list misses, add it here rather than
+// touching the matching logic, so the fix stays a one-line addition.
+const ORDER_KEYS = [
+  "order id",
+  "order no",
+  "order number",
+  "orderid",
+  "sub order no",
+  "suborder no",
+  "sub order id",
+  "suborder id",
+  "order_item_id",
+  "order item id",
+  "orderitemid",
+];
+const AWB_KEYS = [
+  "awb",
+  "awb number",
+  "awb no",
+  "awbno",
+  "reverse awb",
+  "reverse awb number",
+  "reverse awb no",
+  "reverse shipment tracking id",
+  "reverse tracking id",
+  "return awb",
+  "return awb number",
+  "tracking id",
+  "tracking number",
+];
+const DATE_KEYS = [
+  "return date",
+  "date",
+  "initiated date",
+  "return initiated date",
+  "return init date",
+  "rma date",
+  "created at",
+  "return creation date",
+  "return request date",
+];
+const CARRIER_KEYS = [
+  "courier",
+  "carrier",
+  "reverse courier",
+  "reverse carrier",
+  "courier name",
+  "courier partner",
+  "logistics partner",
+  "shipping partner",
+];
+// The freeform explanation text a marketplace attaches to a return (e.g.
+// "Size issue", "Order cancelled by buyer", "Undelivered — unreachable").
+// Distinct from returnType (below), which is the RTO-vs-customer-return
+// classification.
+const REASON_KEYS = [
+  "return status",
+  "status",
+  "reason",
+  "return reason",
+  "return sub reason",
+  "rto reason",
+  "cancellation reason",
+];
+// An explicit classification column, when the marketplace provides one —
+// Flipkart and Meesho both label this "Return Type" with values like
+// "Customer Return" / "RTO" / "Buyer Return" in their seller-panel exports.
+const TYPE_KEYS = ["return type", "returntype", "type", "return category"];
 
 function pick(rec: Record<string, string>, keys: string[]): string {
   for (const k of keys) {
@@ -88,6 +160,28 @@ function pick(rec: Record<string, string>, keys: string[]): string {
     if (hit && rec[hit]?.trim()) return rec[hit].trim();
   }
   return "";
+}
+
+/**
+ * Best-effort RTO vs customer-return classification. Prefers an explicit
+ * "Return Type" column; falls back to keyword-matching the reason text when
+ * the sheet doesn't carry one. Returns null (never guesses) when neither
+ * source gives a usable signal — an unclassified return is still imported,
+ * just without this label.
+ */
+function classifyReturnType(explicitType: string, reasonText: string): string | null {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const t = norm(explicitType);
+  if (t) {
+    if (/\brto\b|return.?to.?origin/.test(t)) return "RTO";
+    if (/customer|buyer/.test(t)) return "CUSTOMER_RETURN";
+    return explicitType.trim().slice(0, 40); // pass through whatever the sheet said, capped to column width
+  }
+  const r = norm(reasonText);
+  if (!r) return null;
+  if (/\brto\b|undeliver|unreachable|refused|cancel(l)?ed by buyer|address issue/.test(r)) return "RTO";
+  if (/return|exchange|size issue|quality issue|damaged|defective|wrong (item|product)/.test(r)) return "CUSTOMER_RETURN";
+  return null;
 }
 
 returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, res, next) => {
@@ -116,7 +210,10 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
       const orderNo = pick(rec, ORDER_KEYS).replace(/^'/, "");
       const awb = pick(rec, AWB_KEYS) || null;
       const carrier = pick(rec, CARRIER_KEYS) || null;
-      const rawStatus = pick(rec, STATUS_KEYS);
+      const rawReason = pick(rec, REASON_KEYS);
+      const rawType = pick(rec, TYPE_KEYS);
+      const returnType = classifyReturnType(rawType, rawReason);
+      const reason = rawReason || null;
       const dateStr = pick(rec, DATE_KEYS);
       const initiatedAt = dateStr ? new Date(dateStr) : new Date();
 
@@ -138,18 +235,22 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
             .set({
               reverseAwb: awb ?? undefined,
               reverseCarrier: carrier ?? undefined,
+              returnType: returnType ?? undefined,
+              reason: reason ?? undefined,
               initiatedAt: Number.isNaN(initiatedAt.getTime()) ? undefined : initiatedAt,
             })
             .where(eq(returns.id, existing.id));
-          results.push({ row: rowNo, order: orderNo, returnId: existing.id, updated: true });
+          results.push({ row: rowNo, order: orderNo, returnId: existing.id, returnType, updated: true });
         } else {
           const { returnId } = await initiateReturn({
             orderId: match.orderId,
             reverseAwb: awb ?? undefined,
             reverseCarrier: carrier ?? undefined,
+            returnType,
+            reason,
             initiatedAt: Number.isNaN(initiatedAt.getTime()) ? new Date() : initiatedAt,
           });
-          results.push({ row: rowNo, order: orderNo, returnId, created: true, brand: match.brand, marketplace: match.mp });
+          results.push({ row: rowNo, order: orderNo, returnId, returnType, created: true, brand: match.brand, marketplace: match.mp });
         }
         imported += 1;
       } catch (e) {
@@ -235,6 +336,8 @@ returnsRouter.get("/", async (req, res, next) => {
       .select({
         id: returns.id,
         status: returns.status,
+        returnType: returns.returnType,
+        reason: returns.reason,
         reverseAwb: returns.reverseAwb,
         reverseCarrier: returns.reverseCarrier,
         initiatedAt: returns.initiatedAt,

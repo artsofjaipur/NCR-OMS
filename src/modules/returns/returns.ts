@@ -9,6 +9,8 @@ export async function initiateReturn(params: {
   orderItemId?: number | null;
   reverseAwb?: string | null;
   reverseCarrier?: string | null;
+  returnType?: string | null;
+  reason?: string | null;
   initiatedAt: Date;
 }): Promise<{ returnId: number }> {
   const [row] = await db
@@ -19,6 +21,8 @@ export async function initiateReturn(params: {
       status: "INITIATED",
       reverseAwb: params.reverseAwb ?? null,
       reverseCarrier: params.reverseCarrier ?? null,
+      returnType: params.returnType ?? null,
+      reason: params.reason ?? null,
       initiatedAt: params.initiatedAt,
     })
     .returning({ id: returns.id });

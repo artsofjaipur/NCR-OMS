@@ -360,6 +360,17 @@ export const returns = pgTable("returns", {
   orderId: integer("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
   orderItemId: integer("order_item_id").references(() => orderItems.id),
   status: returnStatusEnum("status").notNull().default("INITIATED"),
+  // Marketplace-reported classification, captured from the return-sheet CSV
+  // (e.g. Flipkart/Meesho "Return Type" column: "Customer Return" vs "RTO" —
+  // an RTO never left the customer's hands and should never be QC'd for
+  // damage the same way a worn/returned customer item would be). Free-text
+  // because marketplaces don't share a fixed vocabulary; NULL when the sheet
+  // didn't carry a recognizable value.
+  returnType: varchar("return_type", { length: 40 }),
+  // The marketplace's own return/RTO reason text (e.g. "Size issue", "Order
+  // cancelled by buyer", "Undelivered — customer unreachable"). Distinct from
+  // qcNotes, which is our own warehouse QC finding recorded later.
+  reason: text("reason"),
   reverseAwb: varchar("reverse_awb", { length: 100 }),
   reverseCarrier: varchar("reverse_carrier", { length: 100 }),
   initiatedAt: timestamp("initiated_at", { withTimezone: true }),
