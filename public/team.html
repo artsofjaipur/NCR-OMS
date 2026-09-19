@@ -15,8 +15,12 @@
 <body>
 
 <!-- Team & Roles — split out of /app (was the hidden-until-scrolled
-     #team-panel) into its own page by Claude (Anthropic) 2026-09-11, per
-     user request. See BRAIN.md. -->
+     #team-panel) into its own page by Claude (Anthropic) 2026-09-11.
+     Redesigned 2026-09-19 per user request ("dilogbox se kaam me lo...
+     attractive banao") — Add User and per-user Edit (name/email/password/
+     role/section-permissions) both now open modal dialogs (public/modal.js)
+     instead of an always-visible form and an inline expanding table row.
+     See BRAIN.md. -->
 
 <header class="topbar">
   <div class="tb-left">
@@ -35,24 +39,14 @@
 <main class="shell">
 
   <section class="panel wide" id="team-panel">
-    <div class="panel-head">
-      <h2 class="serif">Team &amp; Permissions</h2>
-      <span class="chip chip-dim" id="team-count">0</span>
+    <div class="section-head-row">
+      <div class="panel-head" style="margin-bottom:0">
+        <h2 class="serif">Team &amp; Permissions</h2>
+        <span class="chip chip-dim" id="team-count">0</span>
+      </div>
+      <button type="button" class="btn" id="tu-open-btn" style="width:auto;padding:10px 18px">＋ Add User</button>
     </div>
-    <p class="panel-sub">Owner/Admin decide karenge kis user ko kaunsa section milega. Roles ke defaults bhi hain; per-user overrides neeche.</p>
-    <form id="tu-form" class="fgrid">
-      <label>Name <input id="tu-name" type="text" required placeholder="Ramesh Kumar" /></label>
-      <label>Email <input id="tu-email" type="email" required placeholder="ramesh@company.com" /></label>
-      <label>Password <input id="tu-pass" type="password" required minlength="8" placeholder="min 8 chars" /></label>
-      <label>Role
-        <select id="tu-role">
-          <option value="OPS">OPS (operations)</option>
-          <option value="ADMIN">ADMIN</option>
-          <option value="VIEWER">VIEWER (read-only)</option>
-        </select>
-      </label>
-      <button type="submit" class="btn" id="tu-btn">＋ Add User</button>
-    </form>
+    <p class="panel-sub" style="margin-top:10px">Owner/Admin decide karenge kis user ko kaunsa section milega. Roles ke defaults bhi hain; per-user overrides "Edit" se.</p>
     <div id="entry-result" class="result" hidden></div>
     <div class="tablewrap"><table class="ftable" id="team-table">
       <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Sections</th><th></th></tr></thead>
@@ -68,6 +62,7 @@
 </main>
 
 <script src="/team.js"></script>
+<script src="/modal.js"></script>
 <script src="/nav.js"></script>
 </body>
 </html>

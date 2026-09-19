@@ -1,8 +1,12 @@
 /* NCR-OMS — Company & Setup page: company profile (view/edit + bank
  * accounts + access list + delete) and brand / seller-account management.
- * Split out of app.js into its own page by Claude (Anthropic) 2026-09-11,
- * per user request — see BRAIN.md. Same session guard pattern as the other
- * secondary pages (finance.js, reports.js). */
+ * Split out of app.js into its own page by Claude (Anthropic) 2026-09-11.
+ * Redesigned 2026-09-19 per user request ("jaha dilogbox se kam ho jaye
+ * vaha dilogbox se kaam me lo lekin attractive banao") — Bank Accounts and
+ * Brand management (add + per-brand manage) now happen in modal dialogs
+ * (window.NcrModal, public/modal.js) instead of inline accordions, and the
+ * brand list renders as a proper row list. See BRAIN.md. Same session guard
+ * pattern as the other secondary pages. */
 (function () {
   "use strict";
 
@@ -159,16 +163,21 @@
       if (!r.ok || !r.data) return;
       var c = r.data;
       fillCompanyProfile(c);
-      var banks = (c.bankAccounts || []).map(function (b) {
-        return "<div class='bm-card'>" +
-          "<div><b>" + esc(b.label || "Account") + "</b>" + (b.isPrimary ? " <span class='pill pill-ok'>PRIMARY</span>" : "") + "</div>" +
-          "<div class='small'>" + esc(b.bankName || "") + " · " + esc(b.ifsc || "") + "</div>" +
-          "<div class='small'>A/C: " + esc(b.accountNumberMasked || "••••") + "</div>" +
-          "<div class='small'>AD Code: " + esc(b.adCode || "—") + "</div>" +
-          "</div>";
-      }).join("");
-      $("#cp-banks").innerHTML = banks || "<div class='small' style='color:var(--muted)'>No bank account yet — invoice auto-fill ke liye add karo.</div>";
+      renderBanks(c.bankAccounts || []);
     });
+  }
+
+  function renderBanks(banks) {
+    var box = $("#cp-banks");
+    box.innerHTML = banks.length
+      ? banks.map(function (b) {
+          return "<div class='list-row'>" +
+            "<div class='list-row-main'>" +
+              "<div class='list-row-title'>" + esc(b.label || "Account") + (b.isPrimary ? " <span class='pill pill-ok' style='margin-left:6px'>PRIMARY</span>" : "") + "</div>" +
+              "<div class='list-row-sub'>" + esc(b.bankName || "") + " · " + esc(b.ifsc || "") + " · A/C " + esc(b.accountNumberMasked || "••••") + " · AD Code " + esc(b.adCode || "—") + "</div>" +
+            "</div></div>";
+        }).join("")
+      : "<div class='empty-state'>No bank account yet — invoice auto-fill ke liye “+ Add Bank Account” se add karo.</div>";
   }
 
   $("#cp-form").addEventListener("submit", function (e) {
@@ -194,32 +203,54 @@
     });
   });
 
-  $("#bk-add-btn").addEventListener("click", function () {
-    if (!canEditCompany) return;
-    var body = {
-      label: $("#bk-label").value.trim(),
-      accountHolderName: $("#bk-holder").value.trim(),
-      accountNumber: $("#bk-number").value.trim(),
-      ifsc: $("#bk-ifsc").value.trim().toUpperCase(),
-      bankName: $("#bk-bank").value.trim(),
-      adCode: $("#bk-adcode").value.trim() || undefined,
-    };
-    if (!body.label || !body.accountHolderName || !body.accountNumber || body.ifsc.length !== 11 || !body.bankName) {
-      cpMsg("err", "Bank form poora bharo — IFSC 11 characters ka hona chahiye.");
-      return;
+  // ---------- Add Bank Account — modal dialog ----------
+  $("#bk-open-btn").addEventListener("click", function () {
+    if (!canEditCompany) { cpMsg("err", "Sirf OWNER/ADMIN bank account add kar sakte hain."); return; }
+    var m = window.NcrModal.open({
+      title: "Add Bank Account",
+      bodyHtml:
+        "<form id='bk-form' class='fgrid fgrid-tight' style='grid-template-columns:1fr'>" +
+          "<label>Label <input id='bk-label' type='text' placeholder='PNB Primary' /></label>" +
+          "<label>Holder Name <input id='bk-holder' type='text' /></label>" +
+          "<label>Account Number <input id='bk-number' type='text' /></label>" +
+          "<label>IFSC <input id='bk-ifsc' type='text' maxlength='11' placeholder='PUNB0614300' style='text-transform:uppercase' /></label>" +
+          "<label>Bank Name <input id='bk-bank' type='text' placeholder='PNB BANK' /></label>" +
+          "<label>AD Code <input id='bk-adcode' type='text' placeholder='0304993/PUNB0614300' /></label>" +
+          "<div id='bk-modal-result' class='result' hidden></div>" +
+          "<button type='submit' class='btn'>Add Bank Account</button>" +
+        "</form>",
+    });
+    function bkMsg(kind, msg) {
+      var box = m.body.querySelector("#bk-modal-result");
+      box.className = "result " + kind;
+      box.textContent = msg;
+      box.hidden = false;
     }
-    api("/companies/me/bank-accounts", { method: "POST", body: body }).then(function (r) {
-      if (r.status === 201) {
-        cpMsg("ok", "Bank account added ✓ (number encrypted store hua)");
-        ["bk-label","bk-holder","bk-number","bk-ifsc","bk-bank","bk-adcode"].forEach(function (id) { $("#" + id).value = ""; });
-        loadCompanyProfile();
-      } else cpMsg("err", (r.data && r.data.error) || "Bank account add failed.");
+    m.body.querySelector("#bk-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var body = {
+        label: m.body.querySelector("#bk-label").value.trim(),
+        accountHolderName: m.body.querySelector("#bk-holder").value.trim(),
+        accountNumber: m.body.querySelector("#bk-number").value.trim(),
+        ifsc: m.body.querySelector("#bk-ifsc").value.trim().toUpperCase(),
+        bankName: m.body.querySelector("#bk-bank").value.trim(),
+        adCode: m.body.querySelector("#bk-adcode").value.trim() || undefined,
+      };
+      if (!body.label || !body.accountHolderName || !body.accountNumber || body.ifsc.length !== 11 || !body.bankName) {
+        bkMsg("err", "Poora bharo — IFSC 11 characters ka hona chahiye.");
+        return;
+      }
+      api("/companies/me/bank-accounts", { method: "POST", body: body }).then(function (r) {
+        if (r.status === 201) {
+          cpMsg("ok", "Bank account added ✓ (number encrypted store hua)");
+          loadCompanyProfile();
+          m.close();
+        } else bkMsg("err", (r.data && r.data.error) || "Bank account add failed.");
+      });
     });
   });
 
   // ==================== BRANDS & SETUP ====================
-  var openManageBrandId = null;
-
   function loadSummary() {
     return api("/dashboard/summary").then(function (r) {
       if (!r.ok || !r.data) return;
@@ -233,84 +264,132 @@
     var brands = (summary && summary.brands) || [];
     var accounts = (summary && summary.accounts) || [];
     $("#brand-count").textContent = String(brands.length);
-    if (!brands.length) {
-      list.innerHTML = "<div class='empty'>No brands yet — add your first below.</div>";
-    } else {
-      list.innerHTML = brands.map(function (b) {
-        var mps = accounts.filter(function (a) { return a.brandId === b.id; });
-        return "<div class='brand-row'>" +
-          "<div><div class='b-name'>" + esc(b.name) + "</div></div>" +
-          "<div class='b-mps'>" + mps.map(function (a) {
-            return "<span class='mp-tag'>" + esc(a.marketplace) + "</span>";
-          }).join("") +
-          " <button type='button' class='bm-mini' data-manage='" + b.id + "'>Manage</button></div>" +
-          "</div>";
-      }).join("");
-    }
+    list.innerHTML = brands.length
+      ? brands.map(function (b) {
+          var mps = accounts.filter(function (a) { return a.brandId === b.id; });
+          var sub = mps.length ? mps.map(function (a) { return "<span class='mp-tag'>" + esc(a.marketplace) + "</span>"; }).join(" ") : "No seller accounts yet";
+          return "<div class='list-row'>" +
+            "<div class='list-row-main'><div class='list-row-title'>" + esc(b.name) + "</div><div class='list-row-sub'>" + sub + "</div></div>" +
+            "<div class='list-row-actions'><button type='button' class='bm-mini' data-manage='" + b.id + "'>Manage</button></div>" +
+            "</div>";
+        }).join("")
+      : "<div class='empty-state'>No brands yet — click “+ Add Brand / Seller Account” above.</div>";
 
     $all("[data-manage]").forEach(function (btn) {
-      btn.addEventListener("click", function () { toggleManage(Number(btn.getAttribute("data-manage"))); });
+      btn.addEventListener("click", function () { openManageModal(Number(btn.getAttribute("data-manage"))); });
+    });
+  }
+
+  // ---------- Add Brand / Seller Account — modal dialog ----------
+  $("#sb-open-btn").addEventListener("click", function () {
+    var brands = (summary && summary.brands) || [];
+    var m = window.NcrModal.open({
+      title: "Add Brand / Seller Account",
+      bodyHtml:
+        "<div class='fgrid fgrid-tight' style='grid-template-columns:1fr'>" +
+          "<label>New Brand Name <input id='sb-brand-name' type='text' placeholder='e.g. Vardhamiti' /></label>" +
+          "<button type='button' id='sb-brand-btn' class='btn ghostbtn2'>Add Brand</button>" +
+        "</div>" +
+        "<div class='fgrid fgrid-tight' style='grid-template-columns:1fr;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)'>" +
+          "<div class='fgrid-title'>Attach Seller Account</div>" +
+          "<label>Brand <select id='sb-brand'>" + (brands.length ? brands.map(function (b) { return "<option value='" + b.id + "'>" + esc(b.name) + "</option>"; }).join("") : "<option value=''>Add a brand first</option>") + "</select></label>" +
+          "<label>Marketplace <select id='sb-mp'>" +
+            "<option value='FLIPKART'>Flipkart</option><option value='MEESHO'>Meesho</option><option value='SNAPDEAL'>Snapdeal</option>" +
+            "<option value='AMAZON_IN'>Amazon IN</option><option value='MYNTRA'>Myntra</option><option value='AJIO'>AJIO</option>" +
+          "</select></label>" +
+          "<label>Seller Account Label <input id='sb-label' type='text' placeholder='e.g. Vardhamiti Official' /></label>" +
+          "<button type='button' id='sb-account-btn' class='btn'>Attach Seller Account</button>" +
+        "</div>" +
+        "<div id='sb-modal-result' class='result' hidden></div>",
     });
 
-    var sel = $("#sb-brand");
-    sel.innerHTML = brands.length
-      ? brands.map(function (b) { return "<option value='" + b.id + "'>" + esc(b.name) + "</option>"; }).join("")
-      : "<option value=''>Add a brand first</option>";
+    function sbMsg(kind, msg) {
+      var box = m.body.querySelector("#sb-modal-result");
+      box.className = "result " + kind;
+      box.textContent = msg;
+      box.hidden = false;
+    }
 
-    if (openManageBrandId) renderManage(openManageBrandId);
-  }
+    m.body.querySelector("#sb-brand-btn").addEventListener("click", function () {
+      var nameEl = m.body.querySelector("#sb-brand-name");
+      var name = nameEl.value.trim();
+      if (name.length < 2) { sbMsg("err", "Brand name needs at least 2 characters."); return; }
+      api("/companies/me/brands", { method: "POST", body: { name: name } }).then(function (r) {
+        if (!r.ok) { sbMsg("err", (r.data && r.data.error) || "Could not add brand."); return; }
+        nameEl.value = "";
+        sbMsg("ok", "Brand added — pick it above to attach a seller account, or close this and use “Manage” on the list.");
+        loadSummary().then(function () {
+          var sel = m.body.querySelector("#sb-brand");
+          var brandsNow = (summary && summary.brands) || [];
+          sel.innerHTML = brandsNow.length ? brandsNow.map(function (b) { return "<option value='" + b.id + "'>" + esc(b.name) + "</option>"; }).join("") : "<option value=''>Add a brand first</option>";
+        });
+      });
+    });
 
-  function toggleManage(brandId) {
-    openManageBrandId = openManageBrandId === brandId ? null : brandId;
-    var box = $("#brand-manage");
-    box.hidden = !openManageBrandId;
-    if (openManageBrandId) renderManage(openManageBrandId);
-  }
+    m.body.querySelector("#sb-account-btn").addEventListener("click", function () {
+      var brandId = Number(m.body.querySelector("#sb-brand").value);
+      var mp = m.body.querySelector("#sb-mp").value;
+      var label = m.body.querySelector("#sb-label").value.trim();
+      if (!brandId) { sbMsg("err", "Pick (or add) a brand first."); return; }
+      if (!label) { sbMsg("err", "Give the seller account a label, e.g. \"Vardhamiti Official\"."); return; }
+      api("/companies/me/marketplace-accounts", {
+        method: "POST",
+        body: { brandId: brandId, marketplace: mp, sellerAccountLabel: label },
+      }).then(function (r) {
+        if (!r.ok) { sbMsg("err", (r.data && r.data.error) || "Could not attach account."); return; }
+        sbMsg("ok", "Seller account attached — it now appears in the upload form on the Dashboard.");
+        m.body.querySelector("#sb-label").value = "";
+        loadSummary();
+      });
+    });
+  });
 
-  function renderManage(brandId) {
+  // ---------- Manage a brand — modal dialog (rename / delete / accounts / SKUs) ----------
+  function openManageModal(brandId) {
     var brands = (summary && summary.brands) || [];
     var accounts = (summary && summary.accounts) || [];
     var b = brands.find(function (x) { return x.id === brandId; });
-    var box = $("#brand-manage");
-    if (!b) { box.hidden = true; openManageBrandId = null; return; }
-
+    if (!b) return;
     var accs = accounts.filter(function (a) { return a.brandId === brandId; });
-    box.innerHTML =
-      "<div class='bm-head'><b>" + esc(b.name) + "</b><span class='chip chip-dim'>BRAND</span></div>" +
-      "<div class='bm-actions'>" +
-        "<input type='text' id='bm-rename' placeholder='New brand name…' />" +
-        "<button type='button' class='bm-mini' id='bm-rename-btn'>Rename</button>" +
-        "<button type='button' class='bm-mini danger' id='bm-delete-btn'>Delete Brand</button>" +
-      "</div>" +
-      "<div class='bm-head' style='margin-top:14px'><b>Seller accounts</b></div>" +
-      (accs.length ? accs.map(function (a) {
-        var active = a.isActive !== false;
-        return "<div class='brand-row acc-row'><div class='b-name'>" + esc(a.sellerAccountLabel || a.marketplace) +
-          (active ? "" : " <span class='pill pill-red' style='margin-left:6px'>OFF</span>") + "</div>" +
-          "<div class='b-mps'><span class='mp-tag'>" + esc(a.marketplace) + "</span>" +
-          "<button type='button' class='bm-mini deact' data-deact='" + a.id + "' data-next='" + (active ? "false" : "true") + "'>" + (active ? "Deactivate" : "Activate") + "</button></div></div>";
-      }).join("") : "<div class='empty' style='padding:8px 0'>No accounts attached.</div>") +
-      "<div class='bm-head' style='margin-top:14px'><b>SKUs</b><button type='button' class='bm-mini' id='bm-skus-btn'>Show SKUs</button></div>" +
-      "<div class='bm-skus' id='bm-skus' hidden></div>" +
-      "<div class='bm-head' style='margin-top:14px'><b>Add SKUs (bulk paste)</b></div>" +
-      "<textarea id='bm-bulk-codes' rows='3' placeholder='Ek line me ek SKU code…\nJK-1001-A\nJK-1001-B' style='width:100%;background:var(--bg2);border:1.5px solid var(--line2);color:var(--text);border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;outline:none'></textarea>" +
-      "<button type='button' class='bm-mini' id='bm-bulk-btn' style='margin-top:8px'>Add SKUs</button>" +
-      "<div id='bm-result' class='result' hidden></div>";
+
+    var m = window.NcrModal.open({
+      title: "Manage — " + b.name,
+      wide: true,
+      bodyHtml:
+        "<div class='bm-actions'>" +
+          "<input type='text' id='bm-rename' placeholder='New brand name…' />" +
+          "<button type='button' class='bm-mini' id='bm-rename-btn'>Rename</button>" +
+          "<button type='button' class='bm-mini danger' id='bm-delete-btn'>Delete Brand</button>" +
+        "</div>" +
+        "<div class='bm-head' style='margin-top:16px'><b>Seller accounts</b></div>" +
+        (accs.length ? accs.map(function (a) {
+          var active = a.isActive !== false;
+          return "<div class='list-row'><div class='list-row-main'><div class='list-row-title'>" + esc(a.sellerAccountLabel || a.marketplace) +
+            (active ? "" : " <span class='pill pill-red' style='margin-left:6px'>OFF</span>") + "</div>" +
+            "<div class='list-row-sub'><span class='mp-tag'>" + esc(a.marketplace) + "</span></div></div>" +
+            "<div class='list-row-actions'><button type='button' class='bm-mini deact' data-deact='" + a.id + "' data-next='" + (active ? "false" : "true") + "'>" + (active ? "Deactivate" : "Activate") + "</button></div></div>";
+        }).join("") : "<div class='empty-state'>No accounts attached.</div>") +
+        "<div class='bm-head' style='margin-top:16px'><b>SKUs</b><button type='button' class='bm-mini' id='bm-skus-btn'>Show SKUs</button></div>" +
+        "<div class='bm-skus' id='bm-skus' hidden></div>" +
+        "<div class='bm-head' style='margin-top:16px'><b>Add SKUs (bulk paste)</b></div>" +
+        "<textarea id='bm-bulk-codes' rows='3' placeholder='Ek line me ek SKU code…\nJK-1001-A\nJK-1001-B' style='width:100%;background:var(--bg2);border:1.5px solid var(--line2);color:var(--text);border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;outline:none'></textarea>" +
+        "<button type='button' class='bm-mini' id='bm-bulk-btn' style='margin-top:8px'>Add SKUs</button>" +
+        "<div id='bm-result' class='result' hidden></div>",
+    });
 
     function bmMsg(kind, msg) {
-      var el = $("#bm-result");
+      var el = m.body.querySelector("#bm-result");
       el.className = "result " + kind;
       el.textContent = msg;
       el.hidden = false;
     }
-
     function on(sel, fn) {
-      var el = $(sel);
+      var el = m.body.querySelector(sel);
       if (el) el.addEventListener("click", fn);
     }
 
     on("#bm-bulk-btn", function () {
-      var codes = $("#bm-bulk-codes").value.trim();
+      var codes = m.body.querySelector("#bm-bulk-codes").value.trim();
       if (!codes) { bmMsg("err", "Paste at least one SKU code."); return; }
       api("/skus/bulk", { method: "POST", body: { brandId: brandId, codes: codes } }).then(function (r) {
         if (!r.ok) { bmMsg("err", (r.data && r.data.error) || "Bulk add failed."); return; }
@@ -318,18 +397,19 @@
         bmMsg(d.created ? "ok" : "err",
           d.created + " SKU(s) added" + (d.skipped && d.skipped.length ? ", " + d.skipped.length + " already existed (skipped)" : "") +
           (d.mapped ? " · " + d.mapped + " account mappings ensured" : ""));
-        $("#bm-bulk-codes").value = "";
+        m.body.querySelector("#bm-bulk-codes").value = "";
         loadSummary();
       });
     });
 
     on("#bm-rename-btn", function () {
-      var name = $("#bm-rename").value.trim();
+      var name = m.body.querySelector("#bm-rename").value.trim();
       if (name.length < 2) { bmMsg("err", "Name needs 2+ characters."); return; }
       api("/companies/me/brands/" + brandId, { method: "PATCH", body: { name: name } }).then(function (r) {
         if (!r.ok) { bmMsg("err", (r.data && r.data.error) || "Rename failed."); return; }
         bmMsg("ok", "Renamed.");
         loadSummary();
+        m.close();
       });
     });
 
@@ -337,17 +417,15 @@
       if (!confirm("Delete brand \"" + b.name + "\"? This also removes its accounts and SKUs. Brands with orders cannot be deleted.")) return;
       api("/companies/me/brands/" + brandId, { method: "DELETE" }).then(function (r) {
         if (r.status === 204) {
-          bmMsg("ok", "Brand deleted.");
-          openManageBrandId = null;
-          box.hidden = true;
           loadSummary();
+          m.close();
         } else {
           bmMsg("err", (r.data && r.data.error) || "Delete failed.");
         }
       });
     });
 
-    $all("[data-deact]").forEach(function (btn) {
+    Array.prototype.slice.call(m.body.querySelectorAll("[data-deact]")).forEach(function (btn) {
       btn.addEventListener("click", function () {
         var accId = Number(btn.getAttribute("data-deact"));
         var next = btn.getAttribute("data-next") === "true";
@@ -355,6 +433,7 @@
           if (r.status === 204) {
             bmMsg("ok", next ? "Account activated — upload selects me wapas aa gaya." : "Account deactivated — upload selects se hat gaya.");
             loadSummary();
+            m.close();
           }
           else bmMsg("err", (r.data && r.data.error) || "Failed.");
         });
@@ -362,7 +441,7 @@
     });
 
     on("#bm-skus-btn", function () {
-      var pane = $("#bm-skus");
+      var pane = m.body.querySelector("#bm-skus");
       if (!pane.hidden) { pane.hidden = true; return; }
       api("/companies/me/brands/" + brandId + "/skus").then(function (r) {
         if (!r.ok || !Array.isArray(r.data)) { bmMsg("err", "Could not load SKUs."); return; }
@@ -370,47 +449,11 @@
           ? r.data.map(function (s) {
               return "<div class='bm-sku-row'><b>" + esc(s.code) + "</b><span>" + esc(s.productTitle) + (s.size ? " · " + esc(s.size) : "") + "</span></div>";
             }).join("")
-          : "<div class='empty' style='padding:8px 0'>No SKUs yet — add via SKU API or ask support for the bulk importer.</div>";
+          : "<div class='empty' style='padding:8px 0'>No SKUs yet — add via SKU API or the bulk importer below.</div>";
         pane.hidden = false;
       });
     });
   }
-
-  function showSetup(kind, msg) {
-    var box = $("#setup-result");
-    box.className = "result " + kind;
-    box.textContent = msg;
-    box.hidden = false;
-  }
-
-  $("#sb-brand-btn").addEventListener("click", function () {
-    var nameEl = $("#sb-brand-name");
-    var name = nameEl.value.trim();
-    if (name.length < 2) { showSetup("err", "Brand name needs at least 2 characters."); return; }
-    api("/companies/me/brands", { method: "POST", body: { name: name } }).then(function (r) {
-      if (!r.ok) { showSetup("err", (r.data && r.data.error) || "Could not add brand."); return; }
-      nameEl.value = "";
-      showSetup("ok", "Brand added.");
-      loadSummary();
-    });
-  });
-
-  $("#sb-account-btn").addEventListener("click", function () {
-    var brandId = Number($("#sb-brand").value);
-    var mp = $("#sb-mp").value;
-    var label = $("#sb-label").value.trim();
-    if (!brandId) { showSetup("err", "Pick (or add) a brand first."); return; }
-    if (!label) { showSetup("err", "Give the seller account a label, e.g. \"Vardhamiti Official\"."); return; }
-    api("/companies/me/marketplace-accounts", {
-      method: "POST",
-      body: { brandId: brandId, marketplace: mp, sellerAccountLabel: label },
-    }).then(function (r) {
-      if (!r.ok) { showSetup("err", (r.data && r.data.error) || "Could not attach account."); return; }
-      $("#sb-label").value = "";
-      showSetup("ok", "Seller account attached — it now appears in the upload form on the Dashboard.");
-      loadSummary();
-    });
-  });
 
   // ---------- boot ----------
   loadCompanyProfile();
