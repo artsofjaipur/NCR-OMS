@@ -20,6 +20,14 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-24 (pass 4)] — Brand auto-detect for sheet imports (user ask: "konse brand ka hai jo check hokar auto ho jayenge kya") — **by Buffy (Codebuff) for Ram**
+
+- **User ask:** sheet se import karte waqt brand/seller-account khud pehchana jaye — manually na chunna pade.
+- **Backend** (`src/routes/dashboard.ts`): new `POST /dashboard/google-sheet/detect` (auth + company scope + `requireSection("orders")`). Same CSV-fetch fallback chain as import (sheetCsv → server fetch of the gid-specific export). Flow: header sniff picks marketplace → real parser extracts the sheet's distinct SKU strings (≤200) → every active account of the company is scored by how many of those SKUs are in its `marketplace_sku_map` mappings **or** its brand's SKU codes (unmapped-but-known codes still identify the brand) → best hit-rate wins, ties broken by oldest account. Response: `{ marketplace, totalSkus, candidates[], detected | null }` — `detected: null` (with a friendly UI message) when nothing matches; friendly 400s for private/timeout/bad-URL/unparseable sheets.
+- **Frontend** (`public/app.html` + `public/app.js`): pasting a sheet URL (or CSV into the fallback textarea) debounces 900ms → `gsRunDetect()` → on a match, the seller-account select is **auto-set** to the detected account, the default warehouse is **auto-filled** (only if not already chosen), and a status box shows "✓ Brand detect hua: <brand> — <account> (<MP>) · N/M SKUs match". No match → clear message to pick manually; fetch/network failure → the server's friendly reason (private sheet / timeout). Detection is silent-safe — manual selection always still works. **UI bug found by the test & fixed:** the URL input only listened for `change`/`paste`, so programmatic fills/typing (and some autofills) never triggered detection — added an `input` listener (debounced).
+- **Verification:** API E2E — Brand A's SKU detects A-Flipkart (1/1, flipkart), Brand B's SKU detects B-Meesho via a Meesho-shaped sheet (meesho date format `2026-09-24` in fixtures — `DD-MM-YYYY` is rejected by the parser by design), unknown SKU → `detected: null` with empty candidates, bad URL → friendly 400. Playwright UI E2E — URL paste triggers detection (graceful status when Google is unreachable from this sandbox), CSV paste auto-selects the right account + default warehouse. `tsc --noEmit` clean; `node --check` OK. (Hit the global 100 req/15min rate limit mid-testing once — restart resets it.)
+- **Files touched:** `src/routes/dashboard.ts`, `public/app.html`, `public/app.js`, `BRAIN.md`.
+
 ### [2026-09-24 (pass 3)] — Production deploy verified + CSP fix for browser-side sheet fetch — **by Buffy (Codebuff) for Ram**
 
 - **Deploy status:** Freebuff hosting has no deployments (first deploy happens from the user's Deploy button) — this project deploys to **Vercel** on push, so verification targeted `https://ncr-oms.vercel.app` directly after pushing.

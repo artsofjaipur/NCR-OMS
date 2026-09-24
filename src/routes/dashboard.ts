@@ -2,7 +2,7 @@ import { Router } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client";
-import { brands, orders, orderItems, warehouses, marketplaceAccounts, skus, returns } from "../db/schema";
+import { brands, orders, orderItems, warehouses, marketplaceAccounts, marketplaceSkuMap, skus, returns } from "../db/schema";
 import { requireAuth, requireCompanyScope } from "../middleware/auth";
 import { requireSection } from "../security/permissions";
 import { HttpError } from "../middleware/errorHandler";
@@ -203,6 +203,155 @@ const sheetImportSchema = z
   .refine((b) => Boolean((b.sheetCsv && b.sheetCsv.trim()) || (b.sheetUrl && b.sheetUrl.trim())), {
     message: "Sheet link ya CSV content — kuch ek zaroori hai",
   });
+
+// ---------------------------------------------------------------------------
+// Auto-detect: which of the caller's marketplace accounts does this sheet
+// belong to? The same header sniff picks the marketplace, then the sheet's
+// actual SKU strings are matched against that account's SKU mappings — a
+// hit-rate decides the best candidate. Same fetch fallback chain as the
+// import route (browser CSV → server fetch), so detection works everywhere
+// the import itself does.
+// ---------------------------------------------------------------------------
+
+const detectSchema = z
+  .object({
+    sheetUrl: z.string().optional(),
+    sheetCsv: z.string().max(20_000_000).optional(),
+  })
+  .refine((b) => Boolean((b.sheetCsv && b.sheetCsv.trim()) || (b.sheetUrl && b.sheetUrl.trim())), {
+    message: "Sheet link ya CSV content — kuch ek zaroori hai",
+  });
+
+dashboardRouter.post("/google-sheet/detect", requireSection("orders"), async (req, res, next) => {
+  try {
+    const body = detectSchema.parse(req.body);
+    const companyId = req.session!.companyId;
+
+    // --- get CSV text (identical fallback chain to the import route) ---
+    let csvText: string;
+    if (body.sheetCsv && body.sheetCsv.trim().length > 0) {
+      csvText = body.sheetCsv;
+    } else {
+      const { spreadsheetId, gid } = parseSheetUrl(body.sheetUrl as string);
+      const exportUrl =
+        `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv` +
+        (gid ? `&gid=${gid}` : "");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      try {
+        const resp = await fetch(exportUrl, {
+          redirect: "follow",
+          signal: controller.signal,
+          headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" },
+        });
+        if (!resp.ok) {
+          if (resp.status === 404 || resp.status === 401 || resp.status === 403) {
+            throw new HttpError(400, "Sheet open nahi ho payi — 'Anyone with the link (Viewer)' sharing on karein.");
+          }
+          throw new HttpError(502, `Google se CSV download fail hua (HTTP ${resp.status}).`);
+        }
+        const ct = resp.headers.get("content-type") || "";
+        csvText = await resp.text();
+        if (ct.includes("text/html") || csvText.trimStart().startsWith("<!DOCTYPE html")) {
+          throw new HttpError(400, "Sheet public nahi hai — Share → 'Anyone with the link' (Viewer) on karein.");
+        }
+      } catch (err) {
+        if (err instanceof HttpError) throw err;
+        if (err && typeof err === "object" && (err as { name?: string }).name === "AbortError") {
+          throw new HttpError(504, "Google se data laane me time out ho gaya — thodi der baad dobara try karein.");
+        }
+        throw new HttpError(502, "Google Sheet tak request pahunchi hi nahi — network/URL check karein.");
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (csvText.trim().length === 0) {
+      throw new HttpError(400, "Sheet khali hai ya gid (tab) galat hai.");
+    }
+
+    const marketplace = detectMarketplace(csvText);
+    const parser =
+      marketplace === "flipkart" ? parseFlipkartExport : marketplace === "meesho" ? parseMeeshoExport : parseSnapdealExport;
+    let marketplaceSkus: string[];
+    try {
+      const normalizedOrders = parser(csvText);
+      marketplaceSkus = normalizedOrders
+        .flatMap((o) => o.items.map((i) => i.marketplaceSku))
+        .filter((s) => typeof s === "string" && s.trim().length > 0);
+    } catch (err) {
+      throw new HttpError(400, `Sheet parse nahi ho payi (${marketplace} format): ${err instanceof Error ? err.message : "unknown error"}`);
+    }
+
+    const distinctSkus = [...new Set(marketplaceSkus.map((s) => s.trim()))].slice(0, 200);
+    if (distinctSkus.length === 0) {
+      throw new HttpError(400, "Sheet me koi SKU nahi mili — rows khali hain ya SKU column missing hai.");
+    }
+
+    // Caller's accounts, newest last for stable ordering.
+    const accounts = await db
+      .select({
+        id: marketplaceAccounts.id,
+        marketplace: marketplaceAccounts.marketplace,
+        sellerAccountLabel: marketplaceAccounts.sellerAccountLabel,
+        brandId: brands.id,
+        brandName: brands.name,
+      })
+      .from(marketplaceAccounts)
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .where(and(eq(brands.companyId, companyId), eq(marketplaceAccounts.isActive, true)))
+      .orderBy(marketplaceAccounts.id);
+
+    if (accounts.length === 0) {
+      throw new HttpError(400, "Koi active seller account nahi mila — pehle Brands & Setup me account banayein.");
+    }
+
+    // Score every account by how many of the sheet's distinct SKUs are mapped
+    // under it (plus its per-brand SKU codes — unmapped-but-known codes still
+    // identify the brand). Shares overlap so ties stay deterministic.
+    const skuSet = new Set(distinctSkus);
+    const scored = [];
+    for (const account of accounts) {
+      const maps = await db
+        .select({ marketplaceSku: marketplaceSkuMap.marketplaceSku })
+        .from(marketplaceSkuMap)
+        .where(eq(marketplaceSkuMap.marketplaceAccountId, account.id));
+      const mapSet = new Set(maps.map((m) => m.marketplaceSku));
+      const brandSkuCodes = new Set(
+        (
+          await db
+            .select({ code: skus.code })
+            .from(skus)
+            .where(eq(skus.brandId, account.brandId))
+        ).map((s) => s.code)
+      );
+      const hits = distinctSkus.filter((s) => mapSet.has(s)).length;
+      const brandHits = distinctSkus.filter((s) => brandSkuCodes.has(s)).length;
+      const best = Math.max(hits, brandHits);
+      scored.push({
+        accountId: account.id,
+        marketplace: account.marketplace,
+        sellerAccountLabel: account.sellerAccountLabel,
+        brandId: account.brandId,
+        brandName: account.brandName,
+        hits: best,
+        total: distinctSkus.length,
+        confidence: distinctSkus.length > 0 ? best / distinctSkus.length : 0,
+      });
+    }
+    scored.sort((a, b) => b.hits - a.hits || a.accountId - b.accountId);
+
+    const top = scored[0];
+    res.json({
+      marketplace,
+      totalSkus: distinctSkus.length,
+      candidates: scored.filter((c) => c.hits > 0),
+      detected: top && top.hits > 0 ? top : null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 dashboardRouter.post("/google-sheet", requireSection("orders"), async (req, res, next) => {
   try {

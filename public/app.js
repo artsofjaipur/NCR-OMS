@@ -219,8 +219,10 @@
       var sheetUrl = ($("#gs-url").value || "").trim();
       var accountId = Number($("#gs-account").value);
       var warehouseId = Number($("#gs-warehouse").value);
+      // Auto-detected account wins if the user hasn't explicitly changed it
+      // after detection — the select already holds the right value.
       if (!sheetUrl) { showGsResult("err", "Google Sheet ka link paste karein."); return; }
-      if (!accountId) { showGsResult("err", "Pick a seller account first — create one under your brand if the list is empty."); return; }
+      if (!accountId) { showGsResult("err", "Seller account detect nahi hua aur manually bhi nahi chuna — list me se ek chunein (Brands & Setup me account banayein agar khali hai)."); return; }
       if (!warehouseId) { showGsResult("err", "Pick a warehouse."); return; }
 
       var btn = $("#gs-btn");
@@ -268,6 +270,78 @@
     box.innerHTML = html;
     box.hidden = false;
   }
+
+  // ---------- auto-detect brand/account from the sheet ----------
+  // When the user pastes a sheet link (or CSV), ask the backend which seller
+  // account the sheet's SKUs belong to and pre-select it + the default
+  // warehouse, so the import is one click. Failure is silent — the user can
+  // always pick manually.
+  var gsDetectTimer = null;
+  var gsLastDetected = null;
+  function gsClearDetection() {
+    gsLastDetected = null;
+    var box = $("#gs-detect");
+    if (box) { box.hidden = true; box.innerHTML = ""; }
+  }
+  function gsScheduleDetect() {
+    var url = ($("#gs-url") && $("#gs-url").value.trim()) || "";
+    var csv = ($("#gs-csv") && $("#gs-csv").value.trim()) || "";
+    if (!url && !csv) { gsClearDetection(); return; }
+    if (gsDetectTimer) clearTimeout(gsDetectTimer);
+    gsDetectTimer = setTimeout(gsRunDetect, 900); // debounce paste/typing
+  }
+  function gsRunDetect() {
+    var url = ($("#gs-url") && $("#gs-url").value.trim()) || "";
+    var csv = ($("#gs-csv") && $("#gs-csv").value.trim()) || "";
+    if (!url && !csv) return;
+    var box = $("#gs-detect");
+    if (box) { box.hidden = false; box.innerHTML = "<span class='panel-sub small'>Sheet padh kar brand detect kar rahe hain…</span>"; }
+    var body = {};
+    if (csv) body.sheetCsv = csv; else body.sheetUrl = url;
+    api("/dashboard/google-sheet/detect", { method: "POST", body: body }).then(function (r) {
+      if (!r.ok || !r.data) {
+        gsClearDetection();
+        // Surfaces a real reason (sheet private / unknown format) without being noisy.
+        if (box && r.data && r.data.error) box.innerHTML = "<span class='panel-sub small'>⚠️ " + esc(r.data.error) + "</span>";
+        return;
+      }
+      var d = r.data.detected;
+      if (!d) {
+        if (box) box.innerHTML = "<span class='panel-sub small'>⚠️ Sheet ke SKUs kisi account se match nahi hue — manually select karein. (" + esc(r.data.marketplace || "") + " format, " + (r.data.totalSkus || 0) + " SKUs)</span>";
+        return;
+      }
+      gsLastDetected = d;
+      var sel = $("#gs-account");
+      if (sel && sel.querySelector("option[value='" + d.accountId + "']")) {
+        sel.value = String(d.accountId);
+        updateGsMpBadge();
+      }
+      // Default warehouse auto-fill (only if not already chosen).
+      var wh = $("#gs-warehouse");
+      if (wh && !wh.value) {
+        var defOpt = wh.querySelector("option[selected]") || wh.options[0];
+        // prefer the one marked (default) by renderWarehouses()
+        for (var i = 0; i < wh.options.length; i++) {
+          if (/\(default\)/.test(wh.options[i].textContent)) { defOpt = wh.options[i]; break; }
+        }
+        if (defOpt && defOpt.value) wh.value = defOpt.value;
+      }
+      if (box) {
+        box.innerHTML = "<b class='ok'>✓ Brand detect hua:</b> " + esc(d.brandName || "") +
+          " — " + esc(d.sellerAccountLabel || ("account #" + d.accountId)) +
+          " (" + esc(d.marketplace || "") + ") · " + d.hits + "/" + d.total + " SKUs match" +
+          (d.confidence >= 1 ? "" : " — sahi hai toh seedha Import dabayein") + ".";
+      }
+    }).catch(function () { gsClearDetection(); });
+  }
+  var gsUrlInput = $("#gs-url");
+  if (gsUrlInput) {
+    gsUrlInput.addEventListener("change", gsScheduleDetect);
+    gsUrlInput.addEventListener("paste", function () { setTimeout(gsScheduleDetect, 50); });
+    gsUrlInput.addEventListener("input", gsScheduleDetect); // typing/autofill — debounce keeps it cheap
+  }
+  var gsCsvInput = $("#gs-csv");
+  if (gsCsvInput) gsCsvInput.addEventListener("input", gsScheduleDetect);
 
   // Browser-side fetch of the sheet's CSV export (10s cap). Returns null on
   // any failure — the caller then just posts without sheetCsv so the server

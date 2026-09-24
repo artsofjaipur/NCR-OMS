@@ -140,8 +140,10 @@
         <div class="form-row">
           <label for="gs-url">GOOGLE SHEET LINK</label>
           <input id="gs-url" type="url" required placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=..." title="https://docs.google.com/spreadsheets/d/<sheet-id>/edit?gid=<tab-id>" />
-          <p class="panel-sub small" style="margin-top:6px">Server pehle khud fetch karta hai; network block ho toh aapka browser fetch karta hai — dono fail ho toh neeche CSV paste wala option hai.</p>
+          <p class="panel-sub small" style="margin-top:6px">Link paste karte hi sheet ke SKUs se brand/seller-account khud detect ho jayega — sirf Import dabayein. Server pehle khud fetch karta hai; block ho toh aapka browser, phir CSV paste option.</p>
         </div>
+
+        <div id="gs-detect" class="result" hidden></div>
 
         <div class="form-row">
           <label for="gs-account">SELLER ACCOUNT <span id="gs-mp-badge" class="pill pill-ok" style="margin-left:6px">—</span></label>
