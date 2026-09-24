@@ -206,216 +206,6 @@
     box.hidden = false;
   }
 
-  // ---------- import from Google Sheet ----------
-  // Mirrors the manual CSV upload, but the sheet is fetched server-side from
-  // the pasted link — same parsers, same per-order results. Added 2026-09-24.
-  var gsForm = $("#gs-form");
-  if (gsForm) {
-    gsForm.addEventListener("submit", function (e) {
-      e.preventDefault();
-      var resultBox = $("#gs-result");
-      resultBox.hidden = true;
-
-      var sheetUrl = ($("#gs-url").value || "").trim();
-      var accountId = Number($("#gs-account").value);
-      var warehouseId = Number($("#gs-warehouse").value);
-      // Auto-detected account wins if the user hasn't explicitly changed it
-      // after detection — the select already holds the right value.
-      if (!sheetUrl) { showGsResult("err", "Google Sheet ka link paste karein."); return; }
-      if (!accountId) { showGsResult("err", "Seller account detect nahi hua aur manually bhi nahi chuna — list me se ek chunein (Brands & Setup me account banayein agar khali hai)."); return; }
-      if (!warehouseId) { showGsResult("err", "Pick a warehouse."); return; }
-
-      var btn = $("#gs-btn");
-      btn.disabled = true;
-      btn.classList.add("loading");
-      // Try a quick browser-side fetch of the CSV export first — on normal
-      // user networks this works and the server never needs egress to Google.
-      // If it fails (blocked/timeout), silently fall back to the server fetch.
-      gsBrowserFetchCsv(sheetUrl).then(function (csv) {
-        var body = { sheetUrl: sheetUrl, marketplaceAccountId: accountId, warehouseId: warehouseId };
-        if (csv) body.sheetCsv = csv;
-        return api("/dashboard/google-sheet", { method: "POST", body: body });
-      }).then(function (r) {
-        btn.disabled = false;
-        btn.classList.remove("loading");
-        if (!r.ok) {
-          showGsResult("err", (r.data && r.data.error) || "Import failed — try again.");
-          return;
-        }
-        var imported = r.data.imported || 0;
-        var failed = r.data.failed || 0;
-        var html = "<b class='ok'>" + imported + " order" + (imported === 1 ? "" : "s") + " imported</b>" +
-          (failed ? ", <b>" + failed + " failed</b>" : "") +
-          " <span class='pill' style='margin-left:6px'>" + esc((r.data.marketplace || "").toUpperCase()) + "</span>.";
-        var errs = (r.data.results || []).filter(function (x) { return x.error; }).slice(0, 5);
-        if (errs.length) {
-          html += "<ul>" + errs.map(function (x) {
-            return "<li>" + esc(x.marketplaceOrderId || "row") + ": " + esc(x.error) + "</li>";
-          }).join("") + "</ul>";
-        }
-        showGsResult(imported > 0 ? "ok" : "err", html);
-        loadOrders();
-        loadSummary();
-      }).catch(function (err) {
-        btn.disabled = false;
-        btn.classList.remove("loading");
-        if (err && err.message !== "session expired") showGsResult("err", "Network error — try again.");
-      });
-    });
-  }
-
-  function showGsResult(kind, html) {
-    var box = $("#gs-result");
-    box.className = "result " + kind;
-    box.innerHTML = html;
-    box.hidden = false;
-  }
-
-  // ---------- auto-detect brand/account from the sheet ----------
-  // When the user pastes a sheet link (or CSV), ask the backend which seller
-  // account the sheet's SKUs belong to and pre-select it + the default
-  // warehouse, so the import is one click. Failure is silent — the user can
-  // always pick manually.
-  var gsDetectTimer = null;
-  var gsLastDetected = null;
-  function gsClearDetection() {
-    gsLastDetected = null;
-    var box = $("#gs-detect");
-    if (box) { box.hidden = true; box.innerHTML = ""; }
-  }
-  function gsScheduleDetect() {
-    var url = ($("#gs-url") && $("#gs-url").value.trim()) || "";
-    var csv = ($("#gs-csv") && $("#gs-csv").value.trim()) || "";
-    if (!url && !csv) { gsClearDetection(); return; }
-    if (gsDetectTimer) clearTimeout(gsDetectTimer);
-    gsDetectTimer = setTimeout(gsRunDetect, 900); // debounce paste/typing
-  }
-  function gsRunDetect() {
-    var url = ($("#gs-url") && $("#gs-url").value.trim()) || "";
-    var csv = ($("#gs-csv") && $("#gs-csv").value.trim()) || "";
-    if (!url && !csv) return;
-    var box = $("#gs-detect");
-    if (box) { box.hidden = false; box.innerHTML = "<span class='panel-sub small'>Sheet padh kar brand detect kar rahe hain…</span>"; }
-    var body = {};
-    if (csv) body.sheetCsv = csv; else body.sheetUrl = url;
-    api("/dashboard/google-sheet/detect", { method: "POST", body: body }).then(function (r) {
-      if (!r.ok || !r.data) {
-        gsClearDetection();
-        // Surfaces a real reason (sheet private / unknown format) without being noisy.
-        if (box && r.data && r.data.error) box.innerHTML = "<span class='panel-sub small'>⚠️ " + esc(r.data.error) + "</span>";
-        return;
-      }
-      var d = r.data.detected;
-      if (!d) {
-        if (box) box.innerHTML = "<span class='panel-sub small'>⚠️ Sheet ke SKUs kisi account se match nahi hue — manually select karein. (" + esc(r.data.marketplace || "") + " format, " + (r.data.totalSkus || 0) + " SKUs)</span>";
-        return;
-      }
-      gsLastDetected = d;
-      var sel = $("#gs-account");
-      if (sel && sel.querySelector("option[value='" + d.accountId + "']")) {
-        sel.value = String(d.accountId);
-        updateGsMpBadge();
-      }
-      // Default warehouse auto-fill (only if not already chosen).
-      var wh = $("#gs-warehouse");
-      if (wh && !wh.value) {
-        var defOpt = wh.querySelector("option[selected]") || wh.options[0];
-        // prefer the one marked (default) by renderWarehouses()
-        for (var i = 0; i < wh.options.length; i++) {
-          if (/\(default\)/.test(wh.options[i].textContent)) { defOpt = wh.options[i]; break; }
-        }
-        if (defOpt && defOpt.value) wh.value = defOpt.value;
-      }
-      if (box) {
-        box.innerHTML = "<b class='ok'>✓ Brand detect hua:</b> " + esc(d.brandName || "") +
-          " — " + esc(d.sellerAccountLabel || ("account #" + d.accountId)) +
-          " (" + esc(d.marketplace || "") + ") · " + d.hits + "/" + d.total + " SKUs match" +
-          (d.confidence >= 1 ? "" : " — sahi hai toh seedha Import dabayein") + ".";
-      }
-    }).catch(function () { gsClearDetection(); });
-  }
-  var gsUrlInput = $("#gs-url");
-  if (gsUrlInput) {
-    gsUrlInput.addEventListener("change", gsScheduleDetect);
-    gsUrlInput.addEventListener("paste", function () { setTimeout(gsScheduleDetect, 50); });
-    gsUrlInput.addEventListener("input", gsScheduleDetect); // typing/autofill — debounce keeps it cheap
-  }
-  var gsCsvInput = $("#gs-csv");
-  if (gsCsvInput) gsCsvInput.addEventListener("input", gsScheduleDetect);
-
-  // Browser-side fetch of the sheet's CSV export (10s cap). Returns null on
-  // any failure — the caller then just posts without sheetCsv so the server
-  // attempts its own fetch. HTML responses (private sheet) are rejected so
-  // the parser never sees login-page markup.
-  function gsBrowserFetchCsv(sheetUrl) {
-    var m = String(sheetUrl).match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-    if (!m || typeof fetch === "undefined" || typeof AbortController === "undefined") {
-      return Promise.resolve(null);
-    }
-    var gidMatch = String(sheetUrl).match(/[#&?]gid=([0-9]+)/);
-    var exportUrl = "https://docs.google.com/spreadsheets/d/" + m[1] + "/export?format=csv" +
-      (gidMatch ? "&gid=" + gidMatch[1] : "");
-    var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, 10000);
-    return fetch(exportUrl, { redirect: "follow", signal: ctrl.signal })
-      .then(function (r) { return r.ok ? r.text() : null; })
-      .then(function (txt) {
-        clearTimeout(timer);
-        if (!txt) return null;
-        var head = txt.trimStart().slice(0, 20).toLowerCase();
-        if (head.indexOf("<!doctype") === 0 || head.indexOf("<html") === 0) return null;
-        return txt;
-      })
-      .catch(function () { clearTimeout(timer); return null; });
-  }
-
-  // Manual fallback import: pasted CSV content (File → Download → CSV from
-  // the sheet), for networks where neither the server nor the browser can
-  // reach Google. Same parsers, same per-order results.
-  var gsCsvBtn = $("#gs-csv-btn");
-  if (gsCsvBtn) {
-    gsCsvBtn.addEventListener("click", function () {
-      var resultBox = $("#gs-result");
-      if (resultBox) resultBox.hidden = true;
-
-      var csv = ($("#gs-csv") && $("#gs-csv").value) || "";
-      var accountId = Number($("#gs-account").value);
-      var warehouseId = Number($("#gs-warehouse").value);
-      if (!csv.trim()) { showGsResult("err", "Pehle CSV content paste karein (Sheet → File → Download → CSV)." ); return; }
-      if (!accountId) { showGsResult("err", "Pick a seller account first."); return; }
-      if (!warehouseId) { showGsResult("err", "Pick a warehouse."); return; }
-
-      gsCsvBtn.disabled = true;
-      api("/dashboard/google-sheet", {
-        method: "POST",
-        body: { sheetCsv: csv, marketplaceAccountId: accountId, warehouseId: warehouseId },
-      }).then(function (r) {
-        gsCsvBtn.disabled = false;
-        if (!r.ok) {
-          showGsResult("err", (r.data && r.data.error) || "Import failed — try again.");
-          return;
-        }
-        var imported = r.data.imported || 0;
-        var failed = r.data.failed || 0;
-        var html = "<b class='ok'>" + imported + " order" + (imported === 1 ? "" : "s") + " imported</b>" +
-          (failed ? ", <b>" + failed + " failed</b>" : "") +
-          " <span class='pill' style='margin-left:6px'>" + esc((r.data.marketplace || "").toUpperCase()) + "</span>.";
-        var errs = (r.data.results || []).filter(function (x) { return x.error; }).slice(0, 5);
-        if (errs.length) {
-          html += "<ul>" + errs.map(function (x) {
-            return "<li>" + esc(x.marketplaceOrderId || "row") + ": " + esc(x.error) + "</li>";
-          }).join("") + "</ul>";
-        }
-        showGsResult(imported > 0 ? "ok" : "err", html);
-        loadOrders();
-        loadSummary();
-      }).catch(function (err) {
-        gsCsvBtn.disabled = false;
-        if (err && err.message !== "session expired") showGsResult("err", "Network error — try again.");
-      });
-    });
-  }
-
   // ---------- summary ----------
   function loadSummary() {
     api("/dashboard/summary").then(function (r) {
@@ -450,19 +240,14 @@
   function fillAccountSelect() {
     var sel = $("#up-account");
     var accounts = ((summary && summary.accounts) || []).filter(function (a) { return a.isActive !== false; });
-    var optionsHtml = accounts.length
+    sel.innerHTML = accounts.length
       ? accounts.map(function (a) {
           return "<option value=\"" + a.id + "\" data-mp=\"" + esc(a.marketplace) + "\">" +
             esc(a.sellerAccountLabel || a.marketplace + " #" + a.id) + " — " + esc(a.marketplace) +
             (a.brand ? " (" + esc(a.brand) + ")" : "") + "</option>";
         }).join("")
       : "<option value=\"\">No seller account yet — add under Brands &amp; Setup</option>";
-    sel.innerHTML = optionsHtml;
-    // The Google Sheet import panel shares the same account list.
-    var gsSel = $("#gs-account");
-    if (gsSel) gsSel.innerHTML = optionsHtml;
     updateMpBadge();
-    updateGsMpBadge();
   }
 
   function updateMpBadge() {
@@ -472,28 +257,15 @@
     if (badge) badge.textContent = opt && opt.getAttribute("data-mp") ? opt.getAttribute("data-mp") : "—";
   }
 
-  function updateGsMpBadge() {
-    var sel = $("#gs-account");
-    if (!sel) return;
-    var opt = sel.selectedOptions && sel.selectedOptions[0];
-    var badge = $("#gs-mp-badge");
-    if (badge) badge.textContent = opt && opt.getAttribute("data-mp") ? opt.getAttribute("data-mp") : "—";
-  }
-
   function renderAccounts() { fillAccountSelect(); }
   $("#up-account").addEventListener("change", updateMpBadge);
-  var gsAccountSel = $("#gs-account");
-  if (gsAccountSel) gsAccountSel.addEventListener("change", updateGsMpBadge);
 
   function renderWarehouses() {
     var sel = $("#up-warehouse");
     var whs = (summary && summary.warehouses) || [];
-    var optionsHtml = whs.map(function (w) {
+    sel.innerHTML = whs.map(function (w) {
       return "<option value=\"" + w.id + "\">" + esc(w.name) + (w.isDefault ? " (default)" : "") + "</option>";
     }).join("") || "<option value=\"\">No warehouse</option>";
-    sel.innerHTML = optionsHtml;
-    var gsSel = $("#gs-warehouse");
-    if (gsSel) gsSel.innerHTML = optionsHtml;
   }
 
   // Brand/seller-account management, parties & stock-in now live on their own
@@ -528,26 +300,175 @@
     $("#trend-foot").innerHTML = "<b>" + num(total14) + "</b> orders in 14 days &middot; <b>" + money(rev14) + "</b> revenue";
   }
 
-  // ---------- recent orders ----------
-  function loadOrders() {
-    api("/orders").then(function (r) {
-      if (!r.ok || !Array.isArray(r.data)) return;
-      var rows = r.data.slice(0, 20);
-      var accounts = (summary && summary.accounts) || [];
-      var accMap = {};
-      accounts.forEach(function (a) { accMap[a.id] = a.marketplace; });
+  // ---------- orders (list, search, edit/delete) ----------
+  var ordersPageSize = 50;
+  var ordersLoaded = 0;
+  var ordersRows = []; // accumulated across "Load more"
+  var canDeleteOrders = auth.role === "OWNER" || auth.role === "ADMIN";
 
-      var tb = $("#orders-table tbody");
-      $("#orders-empty").style.display = rows.length ? "none" : "block";
-      tb.innerHTML = rows.map(function (o) {
-        var dt = o.orderedAt ? new Date(o.orderedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—";
-        return "<tr>" +
-          "<td><b>" + esc(o.marketplaceOrderId) + "</b></td>" +
-          "<td>" + esc(accMap[o.marketplaceAccountId] || "—") + "</td>" +
-          "<td><span class='status st-" + esc(o.status) + "'>" + esc(o.status.replace(/_/g, " ")) + "</span></td>" +
-          "<td>—</td>" +
-          "<td>" + dt + "</td></tr>";
+  function accountLabel(id) {
+    var accounts = (summary && summary.accounts) || [];
+    var a = accounts.filter(function (x) { return x.id === id; })[0];
+    return a ? a.marketplace : "—";
+  }
+
+  function matchesFilters(o) {
+    var q = ($("#orders-search").value || "").trim().toLowerCase();
+    var statusFilter = $("#orders-status-filter").value;
+    if (statusFilter && o.status !== statusFilter) return false;
+    if (!q) return true;
+    var hay = [
+      o.marketplaceOrderId,
+      (o.items || []).map(function (it) { return it.marketplaceSku; }).join(" "),
+      (o.shipment && o.shipment.awbNumber) || "",
+    ].join(" ").toLowerCase();
+    return hay.indexOf(q) !== -1;
+  }
+
+  function renderOrdersTable() {
+    var visible = ordersRows.filter(matchesFilters);
+    var tb = $("#orders-table tbody");
+    $("#orders-empty").style.display = visible.length ? "none" : "block";
+    tb.innerHTML = visible.map(function (o) {
+      var dt = o.orderedAt ? new Date(o.orderedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—";
+      var skuText = o.skuSummary || "—";
+      var awb = o.awbNumber || "—";
+      return "<tr data-id='" + o.id + "'>" +
+        "<td><b>" + esc(o.marketplaceOrderId) + "</b></td>" +
+        "<td>" + esc(accountLabel(o.marketplaceAccountId)) + "</td>" +
+        "<td>" + esc(skuText) + "</td>" +
+        "<td>" + esc(awb) + "</td>" +
+        "<td><span class='status st-" + esc(o.status) + "'>" + esc(o.status.replace(/_/g, " ")) + "</span></td>" +
+        "<td>" + dt + "</td>" +
+        "<td class='row-actions'>" +
+          "<button type='button' class='btn btn-ghost btn-sm ord-edit' data-id='" + o.id + "'>Edit</button>" +
+          (canDeleteOrders ? "<button type='button' class='btn btn-danger btn-sm ord-del' data-id='" + o.id + "'>Delete</button>" : "") +
+        "</td></tr>";
+    }).join("");
+  }
+
+  function loadOrders(reset) {
+    if (reset) { ordersRows = []; ordersLoaded = 0; }
+    api("/orders?limit=" + ordersPageSize + "&offset=" + ordersLoaded).then(function (r) {
+      if (!r.ok || !Array.isArray(r.data)) return;
+      ordersRows = ordersRows.concat(r.data);
+      ordersLoaded += r.data.length;
+      renderOrdersTable();
+      $("#orders-load-more").hidden = r.data.length < ordersPageSize;
+    });
+    api("/orders/count").then(function (r) {
+      if (r.ok && r.data) $("#orders-count-chip").textContent = num(r.data.total) + " total";
+    });
+  }
+
+  $("#orders-load-more").addEventListener("click", function () { loadOrders(false); });
+  $("#orders-search").addEventListener("input", renderOrdersTable);
+  $("#orders-status-filter").addEventListener("change", renderOrdersTable);
+
+  $("#orders-table tbody").addEventListener("click", function (e) {
+    var editBtn = e.target.closest(".ord-edit");
+    var delBtn = e.target.closest(".ord-del");
+    if (editBtn) openOrderModal(Number(editBtn.getAttribute("data-id")));
+    else if (delBtn) deleteOrderRow(Number(delBtn.getAttribute("data-id")));
+  });
+
+  function deleteOrderRow(id) {
+    var o = ordersRows.filter(function (x) { return x.id === id; })[0];
+    var label = o ? o.marketplaceOrderId : id;
+    if (!confirm("Delete order \"" + label + "\"? This removes its items, shipment and return history too. This cannot be undone.")) return;
+    api("/orders/" + id, { method: "DELETE" }).then(function (r) {
+      if (r.status === 204) {
+        ordersRows = ordersRows.filter(function (x) { return x.id !== id; });
+        renderOrdersTable();
+        loadSummary();
+      } else {
+        alert((r.data && r.data.error) || "Delete failed.");
+      }
+    });
+  }
+
+  /**
+   * Order No, SKU(s), AWB and status all live together in this one dialog —
+   * exactly the "sabhi se link ho" the floor asked for: edit any of them and
+   * Save writes it back immediately, so the next scan/dispatch check reads
+   * the updated state right away (no separate sync step).
+   */
+  function openOrderModal(id) {
+    api("/orders/" + id).then(function (r) {
+      if (!r.ok || !r.data) { alert((r.data && r.data.error) || "Could not load order."); return; }
+      var detail = r.data;
+      var o = detail.order;
+      var items = detail.items || [];
+      var ship = detail.shipment;
+
+      var itemsHtml = items.map(function (it, idx) {
+        return "<div class='fgrid fgrid-tight' style='grid-template-columns:2fr 1fr 1fr;align-items:end' data-item-id='" + it.id + "'>" +
+          "<label>SKU code <input class='it-sku' type='text' value='" + esc(it.marketplaceSku) + "' /></label>" +
+          "<label>Qty <input class='it-qty' type='number' min='1' value='" + it.quantity + "' /></label>" +
+          "<label>Unit Price <input class='it-price' type='number' step='0.01' value='" + esc(it.unitPrice) + "' /></label>" +
+          "</div>";
       }).join("");
+
+      var m = window.NcrModal.open({
+        title: "Order " + o.marketplaceOrderId,
+        wide: true,
+        bodyHtml:
+          "<form id='ord-form' class='fgrid fgrid-tight' style='grid-template-columns:1fr 1fr'>" +
+            "<label>Status <select id='ord-status'>" +
+              ["CREATED", "READY_TO_DISPATCH", "DISPATCHED", "DELIVERED", "CANCELLED", "RTO_INITIATED", "ON_HOLD"].map(function (s) {
+                return "<option value='" + s + "'" + (s === o.status ? " selected" : "") + ">" + s.replace(/_/g, " ") + "</option>";
+              }).join("") +
+            "</select></label>" +
+            "<label>Invoice No. <input id='ord-invno' type='text' value='" + esc(o.invoiceNumber || "") + "' /></label>" +
+            "<label>AWB Number <input id='ord-awb' type='text' value='" + esc((ship && ship.awbNumber) || "") + "' /></label>" +
+            "<label>Carrier <input id='ord-carrier' type='text' value='" + esc((ship && ship.carrier) || "") + "' /></label>" +
+            "<label style='grid-column:1/-1'>Hold Reason <input id='ord-hold' type='text' value='" + esc(o.holdReason || "") + "' placeholder='optional' /></label>" +
+            "<div style='grid-column:1/-1;margin-top:6px'><b style='font-size:12.5px;color:var(--muted)'>ITEMS (SKU / QTY / PRICE)</b></div>" +
+            "<div id='ord-items' style='grid-column:1/-1;display:flex;flex-direction:column;gap:8px'>" + (itemsHtml || "<span class='empty'>No items on this order.</span>") + "</div>" +
+            "<div id='ord-modal-result' class='result' style='grid-column:1/-1' hidden></div>" +
+            "<button type='submit' class='btn' style='grid-column:1/-1' id='ord-save-btn'>Save Changes</button>" +
+          "</form>",
+      });
+
+      function ordMsg(kind, msg) {
+        var box = m.body.querySelector("#ord-modal-result");
+        box.className = "result " + kind;
+        box.textContent = msg;
+        box.hidden = false;
+      }
+
+      m.body.querySelector("#ord-form").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var patch = {
+          status: m.body.querySelector("#ord-status").value,
+          invoiceNumber: m.body.querySelector("#ord-invno").value.trim() || null,
+          holdReason: m.body.querySelector("#ord-hold").value.trim() || null,
+          shipment: {
+            awbNumber: m.body.querySelector("#ord-awb").value.trim() || null,
+            carrier: m.body.querySelector("#ord-carrier").value.trim() || null,
+          },
+          items: Array.prototype.map.call(m.body.querySelectorAll("#ord-items [data-item-id]"), function (row) {
+            return {
+              id: Number(row.getAttribute("data-item-id")),
+              marketplaceSku: row.querySelector(".it-sku").value.trim(),
+              quantity: Number(row.querySelector(".it-qty").value) || 1,
+              unitPrice: row.querySelector(".it-price").value,
+            };
+          }),
+        };
+        if (!patch.items.length) delete patch.items;
+        var btn = m.body.querySelector("#ord-save-btn");
+        btn.disabled = true;
+        api("/orders/" + id, { method: "PATCH", body: patch }).then(function (r2) {
+          btn.disabled = false;
+          if (!r2.ok) { ordMsg("err", (r2.data && r2.data.error) || "Save failed."); return; }
+          ordMsg("ok", "Saved — updated everywhere (dashboard, dispatch, scan) immediately.");
+          // Refresh the row in the list + KPIs without a full page reload.
+          loadOrders(true);
+          loadSummary();
+          setTimeout(function () { m.close(); }, 600);
+        }).catch(function () { btn.disabled = false; ordMsg("err", "Network error."); });
+      });
     });
   }
 

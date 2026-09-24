@@ -191,7 +191,7 @@ body {
 .form-row { margin-bottom: 14px; }
 .form-row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 label { display: block; font-size: 10.5px; letter-spacing: 1.4px; color: var(--muted); margin-bottom: 7px; }
-select, input[type="text"], input[type="url"], textarea {
+select, input[type="text"] {
   width: 100%;
   background: var(--bg2);
   border: 1px solid var(--line2);
@@ -203,13 +203,6 @@ select, input[type="text"], input[type="url"], textarea {
   outline: none;
   transition: border-color 0.2s;
 }
-
-textarea { resize: vertical; line-height: 1.45; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
-
-/* Google Sheet import panel — pasted-CSV fallback details block */
-.gs-fallback { margin-top: 10px; }
-.gs-fallback summary { cursor: pointer; color: var(--muted); }
-.gs-fallback summary:hover { color: var(--gold); }
 select:focus { border-color: var(--gold2); }
 
 .seg { display: flex; gap: 8px; }
@@ -264,6 +257,16 @@ select:focus { border-color: var(--gold2); }
 }
 .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(216, 180, 92, 0.25); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-ghost {
+  width: auto;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg, #eee);
+  border: 1px solid var(--line);
+}
+.btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); box-shadow: none; }
+.btn-sm { width: auto; padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+.btn-danger { background: linear-gradient(135deg, #e5697a, #c8465a); color: #fff; }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .btn .spin { display: none; }
 .btn.loading .spin {
   display: inline-block;

@@ -118,66 +118,6 @@
       <div id="upload-result" class="result" hidden></div>
     </section>
 
-    <!-- ==================== IMPORT FROM GOOGLE SHEET ==================== -->
-    <!-- Paste a shared ("Anyone with the link") Google Sheet URL; the server
-         downloads its CSV export and runs the same parsers as the manual CSV
-         upload. Added 2026-09-24 — server-side fetch because the sandbox's
-         egress to docs.google.com hangs, but a normal user's browser/network
-         is fine either way. -->
-    <section class="panel upload-panel">
-      <div class="panel-head">
-        <h2 class="serif">Import from Google Sheet</h2>
-        <span class="chip chip-dim">SHEET LINK</span>
-      </div>
-      <p class="panel-sub">Google Sheet se orders seedhe import karein — same parsers jo manual CSV upload use karta hai. Teen steps:</p>
-      <ol class="panel-sub small" style="margin:6px 0 12px 18px; padding:0">
-        <li>Sheet me Share → "Anyone with the link – Viewer" on karein (warna Google CSV nahi dega)</li>
-        <li>Sheet ka link yahan paste karein — jo tab (gid) link me hoga usi ka data import hoga</li>
-        <li>Seller account + warehouse chun kar import karein — marketplace format khud pehchana jayega</li>
-      </ol>
-
-      <form id="gs-form">
-        <div class="form-row">
-          <label for="gs-url">GOOGLE SHEET LINK</label>
-          <input id="gs-url" type="url" required placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=..." title="https://docs.google.com/spreadsheets/d/<sheet-id>/edit?gid=<tab-id>" />
-          <p class="panel-sub small" style="margin-top:6px">Link paste karte hi sheet ke SKUs se brand/seller-account khud detect ho jayega — sirf Import dabayein. Server pehle khud fetch karta hai; block ho toh aapka browser, phir CSV paste option.</p>
-        </div>
-
-        <div id="gs-detect" class="result" hidden></div>
-
-        <div class="form-row">
-          <label for="gs-account">SELLER ACCOUNT <span id="gs-mp-badge" class="pill pill-ok" style="margin-left:6px">—</span></label>
-          <select id="gs-account" required>
-            <option value="">Loading accounts…</option>
-          </select>
-        </div>
-
-        <div class="form-row">
-          <label for="gs-warehouse">WAREHOUSE</label>
-          <select id="gs-warehouse" required>
-            <option value="">Loading warehouses…</option>
-          </select>
-        </div>
-
-        <button id="gs-btn" class="btn" type="submit"><span class="spin"></span>Import from Sheet</button>
-      </form>
-
-      <!-- Manual fallback: when this server's network can't reach Google
-           (strict firewalls/sandboxes), the same CSV can be pasted here and
-           the import runs from that — the browser-side auto-fetch covers the
-           normal case without any pasting. -->
-      <details class="gs-fallback">
-        <summary class="panel-sub small">Server network Google tak nahi pahunch raha? CSV paste karke import karein</summary>
-        <div class="form-row" style="margin-top:8px">
-          <label for="gs-csv">SHEET CSV (EXPORT → PASTE)</label>
-          <textarea id="gs-csv" rows="6" placeholder="Google Sheet me File → Download → CSV, file kholiye, sab copy karke yahan paste kar dein…"></textarea>
-        </div>
-        <button id="gs-csv-btn" class="btn ghostbtn2" type="button">Import Pasted CSV</button>
-      </details>
-
-      <div id="gs-result" class="result" hidden></div>
-    </section>
-
     <!-- ==================== 14-DAY TREND ==================== -->
     <section class="panel">
       <div class="panel-head">
@@ -195,20 +135,36 @@
          linked from the sidebar instead of a scroll-target here. See
          BRAIN.md. -->
 
-    <!-- ==================== RECENT ORDERS ==================== -->
+    <!-- ==================== ORDERS ==================== -->
     <section class="panel wide">
       <div class="panel-head">
-        <h2 class="serif">Recent Orders</h2>
-        <span class="chip chip-dim">LATEST 20</span>
+        <h2 class="serif">Orders</h2>
+        <span class="chip chip-dim" id="orders-count-chip">—</span>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <input id="orders-search" type="text" placeholder="Search order no / SKU / AWB" style="flex:1;min-width:220px" />
+        <select id="orders-status-filter">
+          <option value="">All statuses</option>
+          <option value="CREATED">Created</option>
+          <option value="READY_TO_DISPATCH">Ready to Dispatch</option>
+          <option value="DISPATCHED">Dispatched</option>
+          <option value="DELIVERED">Delivered</option>
+          <option value="CANCELLED">Cancelled</option>
+          <option value="RTO_INITIATED">RTO Initiated</option>
+          <option value="ON_HOLD">On Hold</option>
+        </select>
       </div>
       <div class="tablewrap">
         <table id="orders-table">
           <thead>
-            <tr><th>Order ID</th><th>Marketplace</th><th>Status</th><th>Items</th><th>Ordered</th></tr>
+            <tr><th>Order No</th><th>Marketplace</th><th>SKU</th><th>AWB</th><th>Status</th><th>Ordered</th><th></th></tr>
           </thead>
           <tbody></tbody>
         </table>
         <div id="orders-empty" class="empty">No orders yet — upload your first CSV above.</div>
+      </div>
+      <div style="text-align:center;margin-top:14px">
+        <button type="button" class="btn btn-ghost" id="orders-load-more" hidden>Load more</button>
       </div>
     </section>
 
