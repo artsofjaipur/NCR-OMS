@@ -20,6 +20,14 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-24 (pass 3)] — Production deploy verified + CSP fix for browser-side sheet fetch — **by Buffy (Codebuff) for Ram**
+
+- **Deploy status:** Freebuff hosting has no deployments (first deploy happens from the user's Deploy button) — this project deploys to **Vercel** on push, so verification targeted `https://ncr-oms.vercel.app` directly after pushing.
+- **Both feature commits live in production:** panel markup on `/app`, `gsBrowserFetchCsv` in `app.js`, `POST /dashboard/google-sheet` registered (401 unauthenticated — auth intact), `/auth/login` probe with a fake user returns **401 not 500** (production DB queries healthy), `/health` ok.
+- **Production-only bug found & fixed:** helmet's default CSP has no explicit `connect-src`, so it falls back to `default-src 'self'` — the panel's first-choice **browser-side** fetch of the sheet CSV from `docs.google.com` would have been silently blocked in production (worked locally only because I tested the pasted/server paths). Fix (`src/app.ts`): helmet now pins `connect-src: 'self' https://docs.google.com`, all other directives at helmet defaults. Verified locally via a bounded :3100 instance's headers, then pushed (`2c8a05c`) and polled production until the new header appeared (~60s).
+- **What only the user can verify:** logging into production and importing their real sheet (needs the sheet shared "Anyone with the link – Viewer"). A sandbox-side test of the production import was not possible (sandbox can't authenticate to their prod account and shouldn't create throwaway companies in prod DB).
+- **Files touched:** `src/app.ts`, `BRAIN.md`.
+
 ### [2026-09-24 (pass 2)] — Google Sheet import: full E2E verification + 3 real bugs fixed + browser-fetch fallback — **by Buffy (Codebuff) for Ram**
 
 - **Goal:** verify the Google-Sheet import panel end to end in the preview and fix whatever breaks. Result: **full pipeline verified with a real browser (Playwright) against a real Postgres**; the user's actual sheet could NOT be fetched from this sandbox (its egress to Google data endpoints hangs — documented in pass 1), so the live-URL leg was verified via a fixture that mirrors the sheet's CSV export exactly, plus the new fallbacks below cover the blocked-server case from the user's browser.
