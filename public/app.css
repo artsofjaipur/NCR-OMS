@@ -391,6 +391,13 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
 .st-DELIVERED { background: rgba(70, 185, 138, 0.14); color: var(--green); }
 .st-CANCELLED, .st-RTO_INITIATED { background: rgba(229, 105, 122, 0.14); color: var(--red); }
 .st-ON_HOLD { background: rgba(240, 150, 90, 0.14); color: var(--orange); }
+/* Return badges -- "return upcoming" (INITIATED/IN_TRANSIT) through to
+   RESTOCKED/CLOSED. Separate palette from order status so the two never
+   get visually confused in the Orders table. */
+.ret-INITIATED, .ret-IN_TRANSIT { background: rgba(216, 180, 92, 0.14); color: var(--gold); }
+.ret-RECEIVED { background: rgba(183, 165, 232, 0.14); color: var(--violet); }
+.ret-QC_PASSED, .ret-RESTOCKED, .ret-CLOSED { background: rgba(70, 185, 138, 0.14); color: var(--green); }
+.ret-QC_FAILED { background: rgba(229, 105, 122, 0.14); color: var(--red); }
 .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 28px 0 12px; }
 
 /* ---------- responsive ---------- */

@@ -23,6 +23,13 @@ const initiateSchema = z.object({
   orderItemId: z.number().int().positive().optional(),
   reverseAwb: z.string().optional(),
   reverseCarrier: z.string().optional(),
+  // Added alongside returnType/reason so a manually-entered return (Single
+  // Entry page, or any future direct API call) can flag RTO the same way
+  // the CSV import path's classifyReturnType() does -- without these,
+  // initiateReturn()'s RTO -> orders.status=RTO_INITIATED auto-sync never
+  // had a returnType to react to on this endpoint.
+  returnType: z.string().max(40).optional(),
+  reason: z.string().optional(),
   initiatedAt: z.string().datetime(),
 });
 
@@ -240,6 +247,17 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
               initiatedAt: Number.isNaN(initiatedAt.getTime()) ? undefined : initiatedAt,
             })
             .where(eq(returns.id, existing.id));
+          // Same RTO auto-sync as a brand-new return (see initiateReturn) --
+          // a re-uploaded sheet can be the first time the classification
+          // resolves to RTO (e.g. the reason text only became recognizable
+          // on a later sheet), so this has to run on the update path too,
+          // not just on first insert.
+          if (returnType === "RTO") {
+            await db
+              .update(orders)
+              .set({ status: "RTO_INITIATED" })
+              .where(and(eq(orders.id, match.orderId), inArray(orders.status, ["CREATED", "READY_TO_DISPATCH", "DISPATCHED", "ON_HOLD"])));
+          }
           results.push({ row: rowNo, order: orderNo, returnId: existing.id, returnType, updated: true });
         } else {
           const { returnId } = await initiateReturn({

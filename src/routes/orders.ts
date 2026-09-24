@@ -104,6 +104,15 @@ ordersRouter.get("/", async (req, res, next) => {
             holdReason: orders.holdReason,
             awbNumber: shipments.awbNumber,
             skuSummary: sql<string>`(SELECT string_agg(DISTINCT oi.marketplace_sku, ', ') FROM order_items oi WHERE oi.order_id = ${orders.id})`,
+            // The order's own status field doesn't change just because a
+            // return exists (a DELIVERED order that comes back is still
+            // "DELIVERED" as far as the marketplace's own lifecycle goes) --
+            // so the list surfaces the *latest* return's status/type inline,
+            // the same way SKU/AWB are already inlined, instead of making
+            // people click into every order to see "return upcoming" /
+            // "return received".
+            returnStatus: sql<string>`(SELECT r.status FROM returns r WHERE r.order_id = ${orders.id} ORDER BY r.created_at DESC LIMIT 1)`,
+            returnType: sql<string>`(SELECT r.return_type FROM returns r WHERE r.order_id = ${orders.id} ORDER BY r.created_at DESC LIMIT 1)`,
           })
           .from(orders)
           .leftJoin(shipments, eq(shipments.orderId, orders.id))

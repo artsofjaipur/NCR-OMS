@@ -321,9 +321,24 @@
       o.marketplaceOrderId,
       (o.items || []).map(function (it) { return it.marketplaceSku; }).join(" "),
       (o.shipment && o.shipment.awbNumber) || "",
+      o.returnStatus || "",
     ].join(" ").toLowerCase();
     return hay.indexOf(q) !== -1;
   }
+
+  // "Return upcoming" (return just initiated / in transit back) vs "return
+  // received" (physically scanned in at the warehouse) vs everything after
+  // that (QC, restock) — one badge, plain language, so the floor doesn't
+  // have to know the underlying status enum.
+  var RETURN_LABELS = {
+    INITIATED: "Return upcoming",
+    IN_TRANSIT: "Return upcoming",
+    RECEIVED: "Return received",
+    QC_PASSED: "QC passed",
+    QC_FAILED: "QC failed",
+    RESTOCKED: "Restocked",
+    CLOSED: "Closed",
+  };
 
   function renderOrdersTable() {
     var visible = ordersRows.filter(matchesFilters);
@@ -333,12 +348,16 @@
       var dt = o.orderedAt ? new Date(o.orderedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—";
       var skuText = o.skuSummary || "—";
       var awb = o.awbNumber || "—";
+      var returnCell = o.returnStatus
+        ? "<span class='status ret-" + esc(o.returnStatus) + "' title='" + esc(o.returnType || "") + "'>" + esc(RETURN_LABELS[o.returnStatus] || o.returnStatus) + "</span>"
+        : "<span class='muted'>—</span>";
       return "<tr data-id='" + o.id + "'>" +
         "<td><b>" + esc(o.marketplaceOrderId) + "</b></td>" +
         "<td>" + esc(accountLabel(o.marketplaceAccountId)) + "</td>" +
         "<td>" + esc(skuText) + "</td>" +
         "<td>" + esc(awb) + "</td>" +
         "<td><span class='status st-" + esc(o.status) + "'>" + esc(o.status.replace(/_/g, " ")) + "</span></td>" +
+        "<td>" + returnCell + "</td>" +
         "<td>" + dt + "</td>" +
         "<td class='row-actions'>" +
           "<button type='button' class='btn btn-ghost btn-sm ord-edit' data-id='" + o.id + "'>Edit</button>" +
@@ -400,6 +419,22 @@
       var o = detail.order;
       var items = detail.items || [];
       var ship = detail.shipment;
+      var returnsList = detail.returns || [];
+
+      var returnsHtml = returnsList.length
+        ? "<div style='grid-column:1/-1;margin-top:6px'><b style='font-size:12.5px;color:var(--muted)'>RETURN HISTORY</b></div>" +
+          "<div style='grid-column:1/-1;display:flex;flex-direction:column;gap:6px'>" +
+          returnsList.map(function (rt) {
+            var when = rt.initiatedAt ? new Date(rt.initiatedAt).toLocaleDateString("en-IN") : "—";
+            return "<div style='display:flex;gap:8px;align-items:center;font-size:13px'>" +
+              "<span class='status ret-" + esc(rt.status) + "'>" + esc(RETURN_LABELS[rt.status] || rt.status) + "</span>" +
+              "<span>" + esc(rt.returnType || "unclassified") + "</span>" +
+              "<span style='color:var(--muted)'>" + when + (rt.reverseAwb ? " · AWB " + esc(rt.reverseAwb) : "") + "</span>" +
+              (rt.reason ? "<span style='color:var(--muted)'>· " + esc(rt.reason) + "</span>" : "") +
+              "</div>";
+          }).join("") +
+          "</div>"
+        : "";
 
       var itemsHtml = items.map(function (it, idx) {
         return "<div class='fgrid fgrid-tight' style='grid-template-columns:2fr 1fr 1fr;align-items:end' data-item-id='" + it.id + "'>" +
@@ -425,6 +460,7 @@
             "<label style='grid-column:1/-1'>Hold Reason <input id='ord-hold' type='text' value='" + esc(o.holdReason || "") + "' placeholder='optional' /></label>" +
             "<div style='grid-column:1/-1;margin-top:6px'><b style='font-size:12.5px;color:var(--muted)'>ITEMS (SKU / QTY / PRICE)</b></div>" +
             "<div id='ord-items' style='grid-column:1/-1;display:flex;flex-direction:column;gap:8px'>" + (itemsHtml || "<span class='empty'>No items on this order.</span>") + "</div>" +
+            returnsHtml +
             "<div id='ord-modal-result' class='result' style='grid-column:1/-1' hidden></div>" +
             "<button type='submit' class='btn' style='grid-column:1/-1' id='ord-save-btn'>Save Changes</button>" +
           "</form>",

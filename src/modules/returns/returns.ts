@@ -1,9 +1,23 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "../../db/client";
-import { returns, orderItems } from "../../db/schema";
+import { returns, orderItems, orders } from "../../db/schema";
 import { lockSkuWarehouse, receiveStock } from "../inventory/ledger";
 
-/** Return: the marketplace-reported lifecycle, from initiation to reverse-AWB delivery at the warehouse door. */
+/**
+ * Return: the marketplace-reported lifecycle, from initiation to reverse-AWB
+ * delivery at the warehouse door.
+ *
+ * Auto-syncs the order itself when the return is a genuine RTO (the parcel
+ * never reached the customer) -- flips orders.status to RTO_INITIATED so the
+ * dashboard/orders list reflects it immediately, without anyone having to
+ * open the order and set it by hand. A CUSTOMER_RETURN (the order was
+ * delivered, then came back) deliberately does NOT touch orders.status --
+ * that order genuinely was delivered, so its own status field should stay
+ * DELIVERED; the return's own status (visible on the orders list as a
+ * separate "Return" badge, and in full on the order detail) is what tracks
+ * "return upcoming" / "return received" for that case. CANCELLED orders are
+ * never overwritten either way.
+ */
 export async function initiateReturn(params: {
   orderId: number;
   orderItemId?: number | null;
@@ -26,6 +40,14 @@ export async function initiateReturn(params: {
       initiatedAt: params.initiatedAt,
     })
     .returning({ id: returns.id });
+
+  if (params.returnType === "RTO") {
+    await db
+      .update(orders)
+      .set({ status: "RTO_INITIATED" })
+      .where(and(eq(orders.id, params.orderId), ne(orders.status, "CANCELLED")));
+  }
+
   return { returnId: row.id };
 }
 
