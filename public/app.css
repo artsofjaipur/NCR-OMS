@@ -191,7 +191,7 @@ body {
 .form-row { margin-bottom: 14px; }
 .form-row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 label { display: block; font-size: 10.5px; letter-spacing: 1.4px; color: var(--muted); margin-bottom: 7px; }
-select, input[type="text"] {
+select, input[type="text"], input[type="url"], textarea {
   width: 100%;
   background: var(--bg2);
   border: 1px solid var(--line2);
@@ -203,6 +203,13 @@ select, input[type="text"] {
   outline: none;
   transition: border-color 0.2s;
 }
+
+textarea { resize: vertical; line-height: 1.45; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+
+/* Google Sheet import panel — pasted-CSV fallback details block */
+.gs-fallback { margin-top: 10px; }
+.gs-fallback summary { cursor: pointer; color: var(--muted); }
+.gs-fallback summary:hover { color: var(--gold); }
 select:focus { border-color: var(--gold2); }
 
 .seg { display: flex; gap: 8px; }

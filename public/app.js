@@ -206,6 +206,142 @@
     box.hidden = false;
   }
 
+  // ---------- import from Google Sheet ----------
+  // Mirrors the manual CSV upload, but the sheet is fetched server-side from
+  // the pasted link — same parsers, same per-order results. Added 2026-09-24.
+  var gsForm = $("#gs-form");
+  if (gsForm) {
+    gsForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var resultBox = $("#gs-result");
+      resultBox.hidden = true;
+
+      var sheetUrl = ($("#gs-url").value || "").trim();
+      var accountId = Number($("#gs-account").value);
+      var warehouseId = Number($("#gs-warehouse").value);
+      if (!sheetUrl) { showGsResult("err", "Google Sheet ka link paste karein."); return; }
+      if (!accountId) { showGsResult("err", "Pick a seller account first — create one under your brand if the list is empty."); return; }
+      if (!warehouseId) { showGsResult("err", "Pick a warehouse."); return; }
+
+      var btn = $("#gs-btn");
+      btn.disabled = true;
+      btn.classList.add("loading");
+      // Try a quick browser-side fetch of the CSV export first — on normal
+      // user networks this works and the server never needs egress to Google.
+      // If it fails (blocked/timeout), silently fall back to the server fetch.
+      gsBrowserFetchCsv(sheetUrl).then(function (csv) {
+        var body = { sheetUrl: sheetUrl, marketplaceAccountId: accountId, warehouseId: warehouseId };
+        if (csv) body.sheetCsv = csv;
+        return api("/dashboard/google-sheet", { method: "POST", body: body });
+      }).then(function (r) {
+        btn.disabled = false;
+        btn.classList.remove("loading");
+        if (!r.ok) {
+          showGsResult("err", (r.data && r.data.error) || "Import failed — try again.");
+          return;
+        }
+        var imported = r.data.imported || 0;
+        var failed = r.data.failed || 0;
+        var html = "<b class='ok'>" + imported + " order" + (imported === 1 ? "" : "s") + " imported</b>" +
+          (failed ? ", <b>" + failed + " failed</b>" : "") +
+          " <span class='pill' style='margin-left:6px'>" + esc((r.data.marketplace || "").toUpperCase()) + "</span>.";
+        var errs = (r.data.results || []).filter(function (x) { return x.error; }).slice(0, 5);
+        if (errs.length) {
+          html += "<ul>" + errs.map(function (x) {
+            return "<li>" + esc(x.marketplaceOrderId || "row") + ": " + esc(x.error) + "</li>";
+          }).join("") + "</ul>";
+        }
+        showGsResult(imported > 0 ? "ok" : "err", html);
+        loadOrders();
+        loadSummary();
+      }).catch(function (err) {
+        btn.disabled = false;
+        btn.classList.remove("loading");
+        if (err && err.message !== "session expired") showGsResult("err", "Network error — try again.");
+      });
+    });
+  }
+
+  function showGsResult(kind, html) {
+    var box = $("#gs-result");
+    box.className = "result " + kind;
+    box.innerHTML = html;
+    box.hidden = false;
+  }
+
+  // Browser-side fetch of the sheet's CSV export (10s cap). Returns null on
+  // any failure — the caller then just posts without sheetCsv so the server
+  // attempts its own fetch. HTML responses (private sheet) are rejected so
+  // the parser never sees login-page markup.
+  function gsBrowserFetchCsv(sheetUrl) {
+    var m = String(sheetUrl).match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!m || typeof fetch === "undefined" || typeof AbortController === "undefined") {
+      return Promise.resolve(null);
+    }
+    var gidMatch = String(sheetUrl).match(/[#&?]gid=([0-9]+)/);
+    var exportUrl = "https://docs.google.com/spreadsheets/d/" + m[1] + "/export?format=csv" +
+      (gidMatch ? "&gid=" + gidMatch[1] : "");
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 10000);
+    return fetch(exportUrl, { redirect: "follow", signal: ctrl.signal })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (txt) {
+        clearTimeout(timer);
+        if (!txt) return null;
+        var head = txt.trimStart().slice(0, 20).toLowerCase();
+        if (head.indexOf("<!doctype") === 0 || head.indexOf("<html") === 0) return null;
+        return txt;
+      })
+      .catch(function () { clearTimeout(timer); return null; });
+  }
+
+  // Manual fallback import: pasted CSV content (File → Download → CSV from
+  // the sheet), for networks where neither the server nor the browser can
+  // reach Google. Same parsers, same per-order results.
+  var gsCsvBtn = $("#gs-csv-btn");
+  if (gsCsvBtn) {
+    gsCsvBtn.addEventListener("click", function () {
+      var resultBox = $("#gs-result");
+      if (resultBox) resultBox.hidden = true;
+
+      var csv = ($("#gs-csv") && $("#gs-csv").value) || "";
+      var accountId = Number($("#gs-account").value);
+      var warehouseId = Number($("#gs-warehouse").value);
+      if (!csv.trim()) { showGsResult("err", "Pehle CSV content paste karein (Sheet → File → Download → CSV)." ); return; }
+      if (!accountId) { showGsResult("err", "Pick a seller account first."); return; }
+      if (!warehouseId) { showGsResult("err", "Pick a warehouse."); return; }
+
+      gsCsvBtn.disabled = true;
+      api("/dashboard/google-sheet", {
+        method: "POST",
+        body: { sheetCsv: csv, marketplaceAccountId: accountId, warehouseId: warehouseId },
+      }).then(function (r) {
+        gsCsvBtn.disabled = false;
+        if (!r.ok) {
+          showGsResult("err", (r.data && r.data.error) || "Import failed — try again.");
+          return;
+        }
+        var imported = r.data.imported || 0;
+        var failed = r.data.failed || 0;
+        var html = "<b class='ok'>" + imported + " order" + (imported === 1 ? "" : "s") + " imported</b>" +
+          (failed ? ", <b>" + failed + " failed</b>" : "") +
+          " <span class='pill' style='margin-left:6px'>" + esc((r.data.marketplace || "").toUpperCase()) + "</span>.";
+        var errs = (r.data.results || []).filter(function (x) { return x.error; }).slice(0, 5);
+        if (errs.length) {
+          html += "<ul>" + errs.map(function (x) {
+            return "<li>" + esc(x.marketplaceOrderId || "row") + ": " + esc(x.error) + "</li>";
+          }).join("") + "</ul>";
+        }
+        showGsResult(imported > 0 ? "ok" : "err", html);
+        loadOrders();
+        loadSummary();
+      }).catch(function (err) {
+        gsCsvBtn.disabled = false;
+        if (err && err.message !== "session expired") showGsResult("err", "Network error — try again.");
+      });
+    });
+  }
+
   // ---------- summary ----------
   function loadSummary() {
     api("/dashboard/summary").then(function (r) {
@@ -240,14 +376,19 @@
   function fillAccountSelect() {
     var sel = $("#up-account");
     var accounts = ((summary && summary.accounts) || []).filter(function (a) { return a.isActive !== false; });
-    sel.innerHTML = accounts.length
+    var optionsHtml = accounts.length
       ? accounts.map(function (a) {
           return "<option value=\"" + a.id + "\" data-mp=\"" + esc(a.marketplace) + "\">" +
             esc(a.sellerAccountLabel || a.marketplace + " #" + a.id) + " — " + esc(a.marketplace) +
             (a.brand ? " (" + esc(a.brand) + ")" : "") + "</option>";
         }).join("")
       : "<option value=\"\">No seller account yet — add under Brands &amp; Setup</option>";
+    sel.innerHTML = optionsHtml;
+    // The Google Sheet import panel shares the same account list.
+    var gsSel = $("#gs-account");
+    if (gsSel) gsSel.innerHTML = optionsHtml;
     updateMpBadge();
+    updateGsMpBadge();
   }
 
   function updateMpBadge() {
@@ -257,15 +398,28 @@
     if (badge) badge.textContent = opt && opt.getAttribute("data-mp") ? opt.getAttribute("data-mp") : "—";
   }
 
+  function updateGsMpBadge() {
+    var sel = $("#gs-account");
+    if (!sel) return;
+    var opt = sel.selectedOptions && sel.selectedOptions[0];
+    var badge = $("#gs-mp-badge");
+    if (badge) badge.textContent = opt && opt.getAttribute("data-mp") ? opt.getAttribute("data-mp") : "—";
+  }
+
   function renderAccounts() { fillAccountSelect(); }
   $("#up-account").addEventListener("change", updateMpBadge);
+  var gsAccountSel = $("#gs-account");
+  if (gsAccountSel) gsAccountSel.addEventListener("change", updateGsMpBadge);
 
   function renderWarehouses() {
     var sel = $("#up-warehouse");
     var whs = (summary && summary.warehouses) || [];
-    sel.innerHTML = whs.map(function (w) {
+    var optionsHtml = whs.map(function (w) {
       return "<option value=\"" + w.id + "\">" + esc(w.name) + (w.isDefault ? " (default)" : "") + "</option>";
     }).join("") || "<option value=\"\">No warehouse</option>";
+    sel.innerHTML = optionsHtml;
+    var gsSel = $("#gs-warehouse");
+    if (gsSel) gsSel.innerHTML = optionsHtml;
   }
 
   // Brand/seller-account management, parties & stock-in now live on their own

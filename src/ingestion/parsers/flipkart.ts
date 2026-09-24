@@ -13,8 +13,10 @@ const STATUS_MAP: Record<string, string> = {
  * Flipkart's own export text-guards numeric-looking ID columns with a
  * leading apostrophe (e.g. `'438462135749739102`) so spreadsheet software
  * doesn't mangle them into scientific notation. Strip it before storing.
+ * Tolerates missing columns (trimmed Google-Sheets copies of the export).
  */
-function stripTextGuard(value: string): string {
+function stripTextGuard(value: string | undefined): string {
+  if (!value) return "";
   return value.startsWith("'") ? value.slice(1) : value;
 }
 
@@ -42,11 +44,14 @@ export function parseFlipkartExport(csvText: string): NormalizedOrder[] {
       invoiceDate: first["Invoice Date (mm/dd/yy)"] ? parseFlipkartMMDDYY(first["Invoice Date (mm/dd/yy)"]) : null,
       orderedAt: parseFlipkartDate(first["Ordered On"]),
       items: rows.map((r) => ({
-        marketplaceLineItemId: stripTextGuard(r["ORDER ITEM ID"]),
-        marketplaceSku: r["SKU"],
-        productTitleSnapshot: r["Product"],
-        quantity: Number(r["Quantity"]),
-        unitPrice: r["Selling Price Per Item"],
+        marketplaceLineItemId: stripTextGuard(r["ORDER ITEM ID"]) || null,
+        marketplaceSku: r["SKU"] || "",
+        // NotNull DB fields get safe defaults so a trimmed sheet column
+        // degrades to a placeholder row instead of a 500 (Google-Sheets
+        // copies of exports often drop empty columns).
+        productTitleSnapshot: r["Product"] || "Unknown",
+        quantity: Number(r["Quantity"]) > 0 ? Number(r["Quantity"]) : 1,
+        unitPrice: r["Selling Price Per Item"] || "0",
         shippingCharge: r["Shipping and Handling Charges"] || "0",
         invoiceAmount: r["Invoice Amount"] || null,
         taxCgst: toNullableNumber(r["CGST"]),
