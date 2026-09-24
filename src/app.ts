@@ -72,7 +72,19 @@ export function createApp(): Express {
   app.use(express.urlencoded({ extended: true }));
 
   // Security Headers
-  app.use(helmet());
+  // connect-src includes docs.google.com so the Import-from-Google-Sheet
+  // panel can fetch the sheet's CSV export straight from the user's browser
+  // (its first-choice path; the server-side fetch remains the fallback).
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+          "connect-src": ["'self'", "https://docs.google.com"],
+        },
+      },
+    })
+  );
 
   // CORS Configuration
   const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
