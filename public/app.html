@@ -129,13 +129,18 @@
         <h2 class="serif">Import from Google Sheet</h2>
         <span class="chip chip-dim">SHEET LINK</span>
       </div>
-      <p class="panel-sub">Google Sheet ka link paste karein — server khud CSV download karke Flipkart/Meesho/Snapdeal format pehchan kar orders import karega. Sheet "Anyone with the link – Viewer" honi chahiye.</p>
+      <p class="panel-sub">Google Sheet se orders seedhe import karein — same parsers jo manual CSV upload use karta hai. Teen steps:</p>
+      <ol class="panel-sub small" style="margin:6px 0 12px 18px; padding:0">
+        <li>Sheet me Share → "Anyone with the link – Viewer" on karein (warna Google CSV nahi dega)</li>
+        <li>Sheet ka link yahan paste karein — jo tab (gid) link me hoga usi ka data import hoga</li>
+        <li>Seller account + warehouse chun kar import karein — marketplace format khud pehchana jayega</li>
+      </ol>
 
       <form id="gs-form">
         <div class="form-row">
           <label for="gs-url">GOOGLE SHEET LINK</label>
-          <input id="gs-url" type="url" required placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=..." />
-          <p class="panel-sub small" style="margin-top:6px">Jo tab (gid) link me hoga usi ka data import hoga.</p>
+          <input id="gs-url" type="url" required placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=..." title="https://docs.google.com/spreadsheets/d/<sheet-id>/edit?gid=<tab-id>" />
+          <p class="panel-sub small" style="margin-top:6px">Server pehle khud fetch karta hai; network block ho toh aapka browser fetch karta hai — dono fail ho toh neeche CSV paste wala option hai.</p>
         </div>
 
         <div class="form-row">
