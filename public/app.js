@@ -206,6 +206,71 @@
     box.hidden = false;
   }
 
+  // ---------- AWB / manifest upload (separate from the order-sheet upload
+  // above -- no account/warehouse picker, matches by order id within
+  // whichever company is currently selected) ----------
+  var awbDropzone = $("#awb-dropzone");
+  var awbFileInput = $("#awb-file");
+  var awbSelectedFile = null;
+  awbFileInput.addEventListener("change", function () {
+    if (awbFileInput.files.length) setAwbFile(awbFileInput.files[0]);
+  });
+  ["dragenter", "dragover"].forEach(function (ev) {
+    awbDropzone.addEventListener(ev, function (e) { e.preventDefault(); awbDropzone.classList.add("drag"); });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    awbDropzone.addEventListener(ev, function (e) { e.preventDefault(); awbDropzone.classList.remove("drag"); });
+  });
+  awbDropzone.addEventListener("drop", function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) setAwbFile(f);
+  });
+  function setAwbFile(f) {
+    if (!/\.csv$/i.test(f.name)) { showAwbResult("err", "Only .csv files are accepted."); return; }
+    awbSelectedFile = f;
+    $("#awb-dz-name").textContent = f.name + " (" + (f.size / 1024).toFixed(1) + " KB)";
+  }
+
+  $("#awb-upload-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    $("#awb-upload-result").hidden = true;
+    if (!awbSelectedFile) { showAwbResult("err", "Choose the AWB/manifest CSV first."); return; }
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      var btn = $("#awb-up-btn");
+      btn.disabled = true;
+      btn.classList.add("loading");
+      api("/orders/awb-import", { method: "POST", body: { csv: String(reader.result) } }).then(function (r) {
+        btn.disabled = false;
+        btn.classList.remove("loading");
+        if (!r.ok) { showAwbResult("err", (r.data && r.data.error) || "Upload failed — try again."); return; }
+        var imported = r.data.imported || 0;
+        var failed = r.data.failed || 0;
+        var html = "<b class='ok'>" + imported + " AWB" + (imported === 1 ? "" : "s") + " matched &amp; saved</b>" +
+          (failed ? ", <b>" + failed + " failed</b>" : "") + ".";
+        var errs = (r.data.results || []).filter(function (x) { return x.error; }).slice(0, 5);
+        if (errs.length) {
+          html += "<ul>" + errs.map(function (x) { return "<li>" + esc(x.order || "row") + ": " + esc(x.error) + "</li>"; }).join("") + "</ul>";
+        }
+        showAwbResult(imported > 0 ? "ok" : "err", html);
+        loadOrders(true);
+      }).catch(function (err) {
+        btn.disabled = false;
+        btn.classList.remove("loading");
+        if (err && err.message !== "session expired") showAwbResult("err", "Network error — try again.");
+      });
+    };
+    reader.readAsText(awbSelectedFile);
+  });
+
+  function showAwbResult(kind, html) {
+    var box = $("#awb-upload-result");
+    box.className = "result " + kind;
+    box.innerHTML = html;
+    box.hidden = false;
+  }
+
   // ---------- summary ----------
   function loadSummary() {
     api("/dashboard/summary").then(function (r) {

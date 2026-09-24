@@ -118,6 +118,31 @@
       <div id="upload-result" class="result" hidden></div>
     </section>
 
+    <!-- ==================== UPLOAD AWB / MANIFEST ====================
+         Meesho's order sheet (above) carries no AWB -- it only shows up in
+         Meesho's separate manifest/label export once the shipment is
+         booked. No account/warehouse picker here on purpose: it matches
+         by order id against whichever company you're currently on, so it
+         works the same regardless of which company is selected. -->
+    <section class="panel upload-panel">
+      <div class="panel-head">
+        <h2 class="serif">Upload AWB / Manifest</h2>
+        <span class="chip chip-dim">MEESHO &amp; OTHERS</span>
+      </div>
+      <p class="panel-sub">Order sheet me AWB nahi aata (Meesho) — jab courier assign ho jaye, uska manifest/AWB export yaha daalo. Matches by order no — koi account chunne ki zaroorat nahi.</p>
+
+      <form id="awb-upload-form">
+        <label for="awb-file" class="dropzone" id="awb-dropzone">
+          <input type="file" id="awb-file" accept=".csv,text/csv" hidden />
+          <div class="dz-icon">⬆</div>
+          <div class="dz-text"><b id="awb-dz-name">Choose or drop AWB/manifest .csv</b><span>Order No / Sub Order No + AWB Number columns</span></div>
+        </label>
+        <button id="awb-up-btn" class="btn" type="submit"><span class="spin"></span>Upload AWB List</button>
+      </form>
+
+      <div id="awb-upload-result" class="result" hidden></div>
+    </section>
+
     <!-- ==================== 14-DAY TREND ==================== -->
     <section class="panel">
       <div class="panel-head">
