@@ -78,8 +78,13 @@
 
   <!-- ============ PACK SCAN ============ -->
   <section class="panel" id="tab-pack">
-    <div class="panel-head"><h2 class="serif">Packing Scan</h2><span class="chip">→ READY TO DISPATCH</span></div>
-    <p class="panel-sub">Scan the AWB or Order ID on the label. The order is marked packed and flips to Ready to Dispatch — with brand, marketplace and courier shown for confirmation.</p>
+    <div class="panel-head"><h2 class="serif">Packing Scan</h2>
+      <span style="display:flex;gap:8px;align-items:center">
+        <span class="chip chip-dim" id="pack-today-chip">— scanned today</span>
+        <span class="chip">→ READY TO DISPATCH</span>
+      </span>
+    </div>
+    <p class="panel-sub">Scan the AWB or Order ID on the label — works across every company/brand you have dispatch access to, no need to switch company first. The order is marked packed and flips to Ready to Dispatch, with the matched company, brand, marketplace and courier shown for confirmation.</p>
     <form id="pack-form" class="scanbox">
       <input id="pack-code" type="text" placeholder="Scan / type AWB or Order ID…" autocomplete="off" autofocus />
       <button type="submit" id="pack-btn">Mark Packed</button>
@@ -102,7 +107,7 @@
   <!-- ============ RETURN RECEIVE ============ -->
   <section class="panel" id="tab-retrcv" hidden>
     <div class="panel-head"><h2 class="serif">Return Receive Scan</h2><span class="chip">→ RECEIVED</span></div>
-    <p class="panel-sub">When the return box physically arrives, scan the reverse AWB or Order ID. The return is marked Received — then QC → Restock adds it back to inventory.</p>
+    <p class="panel-sub">When the return box physically arrives, scan the reverse AWB or Order ID — works across every company/brand you have returns access to, no need to switch company first. The return is marked Received — then QC → Restock adds it back to inventory.</p>
     <form id="rcv-form" class="scanbox">
       <input id="rcv-code" type="text" placeholder="Scan / type reverse AWB or Order ID…" autocomplete="off" />
       <button type="submit" id="rcv-btn">Mark Received</button>

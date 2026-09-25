@@ -178,11 +178,14 @@
           <option value="RTO_INITIATED">RTO Initiated</option>
           <option value="ON_HOLD">On Hold</option>
         </select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="orders-today-only" style="width:auto" /> Today only
+        </label>
       </div>
       <div class="tablewrap">
         <table id="orders-table">
           <thead>
-            <tr><th>Order No</th><th>Marketplace</th><th>SKU</th><th>AWB</th><th>Status</th><th>Return</th><th>Ordered</th><th></th></tr>
+            <tr><th>Order No</th><th>Marketplace</th><th>SKU</th><th>AWB</th><th>Status</th><th>Packed</th><th>Return</th><th>Ordered</th><th></th></tr>
           </thead>
           <tbody></tbody>
         </table>

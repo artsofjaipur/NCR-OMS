@@ -486,6 +486,12 @@
       renderAccounts();
       renderWarehouses();
       renderTrend();
+      // Fix (#9): /orders and /dashboard/summary load in parallel, and
+      // renderOrdersTable()'s accountLabel() needs summary.accounts. If
+      // /orders resolved first, its render ran with summary still null and
+      // every row's Marketplace column stuck on "—" forever. Re-render here
+      // too so whichever request finishes last is the one that "wins".
+      if (ordersRows.length) renderOrdersTable();
     });
   }
 
@@ -611,48 +617,90 @@
       var dt = o.orderedAt ? new Date(o.orderedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—";
       var skuText = o.skuSummary || "—";
       var awb = o.awbNumber || "—";
+      // Packed (#10) -- the scan station's mark (shipments.packedAt),
+      // shown separately from order status since a shipment can be packed
+      // while the order is still CREATED/READY_TO_DISPATCH.
+      var packedCell = o.packedAt
+        ? "<span class='status pk-yes' title='" + esc(new Date(o.packedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })) + "'>PACKED</span>"
+        : "<span class='pk-no'>—</span>";
+      // Return column (#13) -- clickable, opens the same order modal every
+      // other action here uses, so "return upcoming/received" is one click
+      // away from the full order detail instead of a dead badge.
       var returnCell = o.returnStatus
-        ? "<span class='status ret-" + esc(o.returnStatus) + "' title='" + esc(o.returnType || "") + "'>" + esc(RETURN_LABELS[o.returnStatus] || o.returnStatus) + "</span>"
+        ? "<button type='button' class='ret-link ord-edit' data-id='" + o.id + "' title='" + esc(o.returnType || "") + "'><span class='status ret-" + esc(o.returnStatus) + "'>" + esc(RETURN_LABELS[o.returnStatus] || o.returnStatus) + "</span></button>"
         : "<span class='muted'>—</span>";
+      // Cancel (#12) -- one click from the list instead of Edit -> change
+      // status -> Save. Hidden once already cancelled/delivered (nothing
+      // to cancel); PATCH /orders/:id already releases reserved stock.
+      var showCancel = o.status !== "CANCELLED" && o.status !== "DELIVERED";
       return "<tr data-id='" + o.id + "'>" +
         "<td><b>" + esc(o.marketplaceOrderId) + "</b></td>" +
         "<td>" + esc(accountLabel(o.marketplaceAccountId)) + "</td>" +
         "<td>" + esc(skuText) + "</td>" +
         "<td>" + esc(awb) + "</td>" +
         "<td><span class='status st-" + esc(o.status) + "'>" + esc(o.status.replace(/_/g, " ")) + "</span></td>" +
+        "<td>" + packedCell + "</td>" +
         "<td>" + returnCell + "</td>" +
         "<td>" + dt + "</td>" +
         "<td class='row-actions'>" +
           "<button type='button' class='btn btn-ghost btn-sm ord-edit' data-id='" + o.id + "'>Edit</button>" +
+          (showCancel ? "<button type='button' class='btn btn-ghost btn-sm ord-cancel' data-id='" + o.id + "'>Cancel</button>" : "") +
           (canDeleteOrders ? "<button type='button' class='btn btn-danger btn-sm ord-del' data-id='" + o.id + "'>Delete</button>" : "") +
         "</td></tr>";
     }).join("");
   }
 
+  function todayOnlyParam() {
+    return $("#orders-today-only") && $("#orders-today-only").checked ? "&today=1" : "";
+  }
+
   function loadOrders(reset) {
     if (reset) { ordersRows = []; ordersLoaded = 0; }
-    api("/orders?limit=" + ordersPageSize + "&offset=" + ordersLoaded).then(function (r) {
+    var todayQs = todayOnlyParam();
+    api("/orders?limit=" + ordersPageSize + "&offset=" + ordersLoaded + todayQs).then(function (r) {
       if (!r.ok || !Array.isArray(r.data)) return;
       ordersRows = ordersRows.concat(r.data);
       ordersLoaded += r.data.length;
       renderOrdersTable();
       $("#orders-load-more").hidden = r.data.length < ordersPageSize;
     });
-    api("/orders/count").then(function (r) {
-      if (r.ok && r.data) $("#orders-count-chip").textContent = num(r.data.total) + " total";
+    api("/orders/count?" + (todayQs ? todayQs.slice(1) : "")).then(function (r) {
+      if (r.ok && r.data) $("#orders-count-chip").textContent = num(r.data.total) + (todayQs ? " today" : " total");
     });
   }
 
   $("#orders-load-more").addEventListener("click", function () { loadOrders(false); });
   $("#orders-search").addEventListener("input", renderOrdersTable);
   $("#orders-status-filter").addEventListener("change", renderOrdersTable);
+  // "Today only" re-queries the server (#14) rather than filtering the
+  // already-loaded page client-side -- /orders is paginated (50 at a time
+  // against a potentially multi-thousand-row total), so a client-only
+  // filter over just the loaded window would show a misleading count.
+  $("#orders-today-only").addEventListener("change", function () { loadOrders(true); });
 
   $("#orders-table tbody").addEventListener("click", function (e) {
     var editBtn = e.target.closest(".ord-edit");
     var delBtn = e.target.closest(".ord-del");
-    if (editBtn) openOrderModal(Number(editBtn.getAttribute("data-id")));
+    var cancelBtn = e.target.closest(".ord-cancel");
+    if (cancelBtn) cancelOrderRow(Number(cancelBtn.getAttribute("data-id")));
+    else if (editBtn) openOrderModal(Number(editBtn.getAttribute("data-id")));
     else if (delBtn) deleteOrderRow(Number(delBtn.getAttribute("data-id")));
   });
+
+  function cancelOrderRow(id) {
+    var o = ordersRows.filter(function (x) { return x.id === id; })[0];
+    var label = o ? o.marketplaceOrderId : id;
+    if (!confirm("Cancel order \"" + label + "\"? Reserved stock is released back to inventory. This cannot be undone from here.")) return;
+    api("/orders/" + id, { method: "PATCH", body: { status: "CANCELLED" } }).then(function (r) {
+      if (r.ok) {
+        if (o) o.status = "CANCELLED";
+        renderOrdersTable();
+        loadSummary();
+      } else {
+        alert((r.data && r.data.error) || "Cancel failed.");
+      }
+    });
+  }
 
   function deleteOrderRow(id) {
     var o = ordersRows.filter(function (x) { return x.id === id; })[0];
