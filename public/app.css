@@ -1,4 +1,19 @@
-/* NCR-OMS dashboard — same luxe tokens as auth pages, workspace layout. */
+/* NCR-OMS dashboard — same luxe tokens as auth pages, workspace layout.
+ *
+ * THEMES — added by Claude (Anthropic) 2026-09-25, user request: "4-5 theme
+ * bhi add karo jisse acha professional ban jaye." Five selectable content
+ * themes (default "Midnight Gold" plus 4 more), switched via
+ * document.documentElement[data-theme="..."] (public/nav.js's theme
+ * picker, persisted in localStorage as "ncr_theme" — a per-viewer display
+ * preference, not shared data). Deliberately scoped to the CONTENT area
+ * only (this file + finance.css, both fully var-driven) — the left
+ * sidebar (nav.css, .nav-side) keeps its own fixed dark-navy chrome across
+ * every theme, same pattern as Notion/Linear/Vercel-style dashboards: a
+ * constant navigation rail, a themeable canvas. --overlay-1/2/3 replace
+ * what used to be hardcoded rgba(255,255,255,...) fills (ghost buttons,
+ * row hover, modal tints) so those adapt correctly under the one light
+ * theme (Daylight) instead of nearly disappearing against a white card.
+ */
 
 :root {
   --bg: #07090c;
@@ -15,16 +30,113 @@
   --violet: #b7a5e8;
   --orange: #f0965a;
   --red: #e5697a;
+  --glow1: rgba(183, 165, 232, 0.07);
+  --glow2: rgba(216, 180, 92, 0.08);
+  --overlay-1: rgba(255, 255, 255, 0.025);
+  --overlay-2: rgba(255, 255, 255, 0.055);
+  --overlay-3: rgba(255, 255, 255, 0.095);
   --serif: "Playfair Display", Georgia, serif;
   --sans: "Inter", system-ui, sans-serif;
+}
+
+/* ---- Slate Indigo — dark navy-slate, indigo/blue accent (corporate) ---- */
+:root[data-theme="slate-indigo"] {
+  --bg: #080b12;
+  --bg2: #0c1019;
+  --card: #111826;
+  --card2: #161f30;
+  --line: rgba(255, 255, 255, 0.08);
+  --line2: rgba(255, 255, 255, 0.15);
+  --text: #eef2fa;
+  --muted: #95a1b8;
+  --gold: #7c93f0;
+  --gold2: #5f74d1;
+  --green: #3fb88a;
+  --violet: #8aa0f2;
+  --orange: #e79a5c;
+  --red: #e6707f;
+  --glow1: rgba(124, 147, 240, 0.09);
+  --glow2: rgba(90, 60, 200, 0.06);
+  --overlay-1: rgba(255, 255, 255, 0.025);
+  --overlay-2: rgba(255, 255, 255, 0.055);
+  --overlay-3: rgba(255, 255, 255, 0.095);
+}
+
+/* ---- Emerald Noir — near-black, emerald accent (premium/finance) ---- */
+:root[data-theme="emerald-noir"] {
+  --bg: #060807;
+  --bg2: #0a0d0b;
+  --card: #0f1512;
+  --card2: #131b17;
+  --line: rgba(255, 255, 255, 0.07);
+  --line2: rgba(255, 255, 255, 0.13);
+  --text: #eaf1ec;
+  --muted: #93a89c;
+  --gold: #3fbf82;
+  --gold2: #2f9c68;
+  --green: #46b98a;
+  --violet: #9fd9bd;
+  --orange: #e0a05c;
+  --red: #e2697a;
+  --glow1: rgba(63, 191, 130, 0.08);
+  --glow2: rgba(20, 120, 80, 0.07);
+  --overlay-1: rgba(255, 255, 255, 0.02);
+  --overlay-2: rgba(255, 255, 255, 0.05);
+  --overlay-3: rgba(255, 255, 255, 0.09);
+}
+
+/* ---- Graphite Rose — dark graphite, warm rose/copper accent ---- */
+:root[data-theme="graphite-rose"] {
+  --bg: #0c0a0a;
+  --bg2: #100d0d;
+  --card: #171212;
+  --card2: #1c1616;
+  --line: rgba(255, 255, 255, 0.08);
+  --line2: rgba(255, 255, 255, 0.14);
+  --text: #f2ecec;
+  --muted: #a89494;
+  --gold: #d98a7a;
+  --gold2: #b96e60;
+  --green: #4fae86;
+  --violet: #cba0c9;
+  --orange: #e2925c;
+  --red: #e26a7a;
+  --glow1: rgba(217, 138, 122, 0.08);
+  --glow2: rgba(180, 110, 90, 0.06);
+  --overlay-1: rgba(255, 255, 255, 0.025);
+  --overlay-2: rgba(255, 255, 255, 0.055);
+  --overlay-3: rgba(255, 255, 255, 0.095);
+}
+
+/* ---- Daylight — light, for a bright warehouse-floor screen ---- */
+:root[data-theme="daylight"] {
+  --bg: #f5f3ee;
+  --bg2: #efece5;
+  --card: #ffffff;
+  --card2: #faf8f4;
+  --line: rgba(20, 20, 20, 0.1);
+  --line2: rgba(20, 20, 20, 0.18);
+  --text: #20242c;
+  --muted: #5c6472;
+  --gold: #a9832f;
+  --gold2: #8c6c26;
+  --green: #1f8f63;
+  --violet: #6a54ad;
+  --orange: #c06a26;
+  --red: #c23b4d;
+  --glow1: rgba(169, 131, 47, 0.05);
+  --glow2: rgba(90, 70, 170, 0.045);
+  --overlay-1: rgba(20, 20, 20, 0.03);
+  --overlay-2: rgba(20, 20, 20, 0.055);
+  --overlay-3: rgba(20, 20, 20, 0.09);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
   background:
-    radial-gradient(1200px 500px at 85% -10%, rgba(183, 165, 232, 0.07), transparent 60%),
-    radial-gradient(900px 420px at 0% 0%, rgba(216, 180, 92, 0.08), transparent 55%),
+    radial-gradient(1200px 500px at 85% -10%, var(--glow1), transparent 60%),
+    radial-gradient(900px 420px at 0% 0%, var(--glow2), transparent 55%),
     var(--bg);
   color: var(--text);
   font-family: var(--sans);
@@ -307,11 +419,11 @@ select:focus { border-color: var(--gold2); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn-ghost {
   width: auto;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--fg, #eee);
+  background: var(--overlay-2);
+  color: var(--text);
   border: 1px solid var(--line);
 }
-.btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); box-shadow: none; }
+.btn-ghost:hover:not(:disabled) { background: var(--overlay-3); box-shadow: none; }
 .btn-sm { width: auto; padding: 6px 12px; font-size: 12px; border-radius: 8px; }
 .btn-danger { background: linear-gradient(135deg, #e5697a, #c8465a); color: #fff; }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
@@ -429,7 +541,7 @@ th {
 td { padding: 11px 12px; border-bottom: 1px solid var(--line); }
 tr:last-child td { border-bottom: none; }
 tbody tr { transition: background 0.15s; }
-tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
+tbody tr:hover { background: var(--overlay-1); }
 .status {
   font-size: 10.5px; letter-spacing: 0.8px; padding: 3px 10px; border-radius: 999px; white-space: nowrap;
 }
@@ -520,7 +632,7 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
   flex: none;
   width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--overlay-2);
   border: 1px solid var(--line);
   border-radius: 9px;
   color: var(--muted);
@@ -529,7 +641,7 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.ncr-modal-close:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); border-color: var(--line2); }
+.ncr-modal-close:hover { color: var(--text); background: var(--overlay-3); border-color: var(--line2); }
 .ncr-modal-body .fgrid, .ncr-modal-body .form-row { margin-top: 0; }
 body.ncr-modal-open { overflow: hidden; }
 
@@ -543,10 +655,10 @@ body.ncr-modal-open { overflow: hidden; }
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--overlay-1);
   transition: border-color 0.15s, background 0.15s;
 }
-.list-row:hover { border-color: var(--line2); background: rgba(255, 255, 255, 0.035); }
+.list-row:hover { border-color: var(--line2); background: var(--overlay-2); }
 .list-row + .list-row { margin-top: 8px; }
 .list-row-main { min-width: 0; }
 .list-row-title { font-weight: 600; font-size: 14px; }
@@ -578,7 +690,7 @@ body.ncr-modal-open { overflow: hidden; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--overlay-1);
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 20px;

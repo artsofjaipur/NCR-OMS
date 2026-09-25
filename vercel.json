@@ -32,6 +32,8 @@
       "destination": "/api" },
     { "source": "/warehouses/:path*",
       "destination": "/api" },
+    { "source": "/orders",
+      "destination": "/api" },
     { "source": "/orders/:path*",
       "destination": "/api" },
     { "source": "/dispatch/:path*",

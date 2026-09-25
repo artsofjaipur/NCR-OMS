@@ -5,6 +5,29 @@
 (function () {
   "use strict";
 
+  // ---- content theme (restore ASAP, before anything else, so there's no
+  // flash of the wrong theme) -- also set by a tiny inline snippet in each
+  // page's <head> for the same reason; this is the fallback/authority for
+  // pages that don't have it yet, and where the switcher below lives.
+  // Claude (Anthropic) 2026-09-25, user request: "4-5 theme bhi add karo
+  // jisse acha professional ban jaye." Themes are content-only (app.css) --
+  // this sidebar keeps its own fixed dark-navy look on purpose.
+  var THEMES = [
+    { id: "midnight-gold", label: "Midnight Gold" },
+    { id: "slate-indigo", label: "Slate Indigo" },
+    { id: "emerald-noir", label: "Emerald Noir" },
+    { id: "graphite-rose", label: "Graphite Rose" },
+    { id: "daylight", label: "Daylight" },
+  ];
+  function currentTheme() {
+    try { return localStorage.getItem("ncr_theme") || "midnight-gold"; } catch (e) { return "midnight-gold"; }
+  }
+  function applyTheme(id) {
+    if (id === "midnight-gold") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", id);
+  }
+  applyTheme(currentTheme());
+
   var auth = null;
   try { auth = JSON.parse(sessionStorage.getItem("ncr_auth") || "null"); } catch (e) { auth = null; }
   if (!auth || !auth.token) return; // unauth pages stay untouched
@@ -24,15 +47,23 @@
   }
 
   /* ---------------- links ---------------- */
-  // inPage: scroll target inside /app instead of a separate URL.
   // Company & Setup / Party Master / Single Entry / Team & Roles used to all
   // deep-link into /app with a different inPage anchor each (they opened the
   // same page). Split into real standalone pages by Claude (Anthropic)
   // 2026-09-11, per user request — see BRAIN.md. This also fixed a bug:
   // Single Entry's old inPage target ("upload-form") was actually the CSV
   // Upload panel's id, not the Single Entry section.
+  //
+  // Orders (the list/search/edit table) got the same treatment 2026-09-25 —
+  // moved off /app onto its own /orders page (user request, Hinglish:
+  // "order page bhi vahi par ahi dono ko alag alag kaam hai to usi hisab se
+  // karo" — dashboard summary and the order list are different jobs).
+  // /app is now purely the KPI strip + Daily Summary + upload panels, so it
+  // gets its own explicit "Dashboard" entry instead of double-duty-ing as
+  // the "Orders" link's inPage target the way it used to.
   var LINKS = [
-    { sec: "orders", ico: "🧾", label: "Orders", href: "/app", inPage: "kpi-today" },
+    { sec: "orders", ico: "📊", label: "Dashboard", href: "/app" },
+    { sec: "orders", ico: "🧾", label: "Orders", href: "/orders" },
     { sec: "scan", ico: "📦", label: "Scan Station", href: "/scan" },
     { sec: "inventory", ico: "📚", label: "Inventory", href: "/reports", inPageNav: "reports", tab: "fees" },
     { sec: "reports", ico: "📊", label: "Reports", href: "/reports", inPageNav: "reports" },
@@ -49,8 +80,6 @@
   ];
 
   /* ---------------- sidebar ---------------- */
-  var current = { "/app": "orders", "/scan": "scan", "/finance": "finance", "/reports": "reports" }[location.pathname] || "";
-
   var side = document.createElement("aside");
   side.className = "nav-side";
   var html =
@@ -61,7 +90,7 @@
     '<div class="nav-sec">Operations</div><ul class="nav-list">';
   LINKS.forEach(function (l) {
     if (!can(l.sec)) return;
-    var active = l.href === location.pathname && (!l.inPage || current === "orders");
+    var active = l.href === location.pathname;
     html +=
       '<li class="nav-item"><a class="nav-link' + (active ? " active" : "") + '" href="' + l.href + '" data-inpage="' + (l.inPage || "") + '" data-tab="' + (l.tab || "") + '">' +
       '<span class="n-ico">' + l.ico + "</span>" + l.label + "</a></li>";
@@ -80,6 +109,10 @@
     // sees no change. "Baar baar login" gap: see BRAIN.md 2026-09-11.
     '<select class="np-switch" id="np-switch" hidden></select>' +
     (auth.role === "OWNER" ? '<button type="button" class="np-add-company" id="np-add-company">+ Add Company</button>' : "") +
+    '<label class="np-theme-label" for="np-theme">Theme</label>' +
+    '<select class="np-theme" id="np-theme">' +
+    THEMES.map(function (t) { return '<option value="' + t.id + '">' + t.label + "</option>"; }).join("") +
+    "</select>" +
     '<div class="np-actions"><a href="/app">Dashboard</a><button type="button" id="nav-logout">Logout</button></div>' +
     "</div>";
   side.innerHTML = html;
@@ -96,6 +129,13 @@
   document.getElementById("nav-logout").addEventListener("click", function () {
     sessionStorage.removeItem("ncr_auth");
     window.location.href = "/login.html";
+  });
+
+  var themeSel = document.getElementById("np-theme");
+  themeSel.value = currentTheme();
+  themeSel.addEventListener("change", function () {
+    applyTheme(themeSel.value);
+    try { localStorage.setItem("ncr_theme", themeSel.value); } catch (e) {}
   });
 
   /* ---------------- workspace (company) switcher ---------------- */

@@ -81,6 +81,19 @@ export function createApp(): Express {
         directives: {
           ...helmet.contentSecurityPolicy.getDefaultDirectives(),
           "connect-src": ["'self'", "https://docs.google.com"],
+          // Allows exactly one small inline snippet (byte-identical on every
+          // authed page, see public/*.html): restores the saved content
+          // theme onto <html data-theme> before app.css/nav.js even load,
+          // so there's no flash of the default theme on page load. Added by
+          // Claude (Anthropic) 2026-09-25 alongside the theme picker
+          // (public/nav.js) -- found via real browser testing that the
+          // default helmet CSP (script-src 'self') silently blocks ANY
+          // inline <script>, so this hash-allowlists that one exact
+          // snippet rather than weakening the policy with 'unsafe-inline'.
+          // If that snippet's text ever changes, this hash must be
+          // recomputed (sha256, base64) or the snippet silently stops
+          // running again.
+          "script-src": ["'self'", "'sha256-6v4qHajW8nxkM7PQiEGo2CMYjPMg1zgru00x5p7rfAM='"],
         },
       },
     })
@@ -178,6 +191,22 @@ export function createApp(): Express {
   // /returns/scan, /returns/tracking), same pattern as /reports.
   app.get("/returns", (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "returns.html"));
+  });
+  // Orders list (search/filter/edit/cancel/delete) — split out of /app's
+  // KPI+Daily-Summary dashboard into its own page 2026-09-25, per user
+  // request (Hinglish): "dusra summery desboard par hai jo sahi hai lekin
+  // order page bhi vahi par ahi dono ko alag alag kaam hai to usi hisab se
+  // karo" — dashboard summary and the order list are different jobs and
+  // shouldn't share one page. UNLIKE /returns above, this one bare path
+  // genuinely collides: ordersRouter's own GET "/" *is* the live order
+  // list, and public/app.js (now orders.js) called it at the bare path.
+  // Fixed the collision at the call site instead of avoiding the URL —
+  // orders.js now calls /api/orders explicitly (the /api-prefixed mount
+  // always reaches the router regardless of any page route sitting on the
+  // bare path, per the routeMounts loop below) — so this page route is
+  // safe to register.
+  app.get("/orders", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "orders.html"));
   });
 
   // API Routes

@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { orders, marketplaceAccounts, brands, shipments } from "../db/schema";
+import { orders, marketplaceAccounts, brands, shipments, orderStatusEnum } from "../db/schema";
 import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
 import { requireSection } from "../security/permissions";
 import { HttpError } from "../middleware/errorHandler";
@@ -254,6 +254,38 @@ ordersRouter.post("/awb-import", requireRole("OWNER", "ADMIN", "OPS"), async (re
   }
 });
 
+// ---------------------------------------------------------------------------
+// Order/AWB search — added by Claude (Anthropic) 2026-09-25. User feedback
+// (Hinglish): "order kese find hoga samjh me nahi aara order, awb search
+// karne ka option nahi aara" -- the Orders page's search box existed, but
+// it only ever filtered the *currently loaded* page (GET / is paginated,
+// default 50 rows) client-side, so searching for an order/AWB that wasn't
+// on the first page silently found nothing. ?q= now matches server-side,
+// across the WHOLE company's orders, against order no, AWB, and SKU --
+// exactly the three things the old client-side search already claimed to
+// cover (public/app.js's old matchesFilters()), just done for real this
+// time. ?status= moved server-side alongside it for the same reason: once
+// search stops being "whatever's on this page," the status filter has to
+// combine with it correctly at the full-dataset level too, not just on one
+// loaded batch.
+// ---------------------------------------------------------------------------
+
+const ORDER_STATUS_VALUES = orderStatusEnum.enumValues;
+const ordersListQuerySchema = z.object({
+  q: z.string().trim().min(1).max(200).optional(),
+  status: z.enum(ORDER_STATUS_VALUES as [string, ...string[]]).optional(),
+});
+
+/** order no / AWB / SKU search, shared by GET / and GET /count so paging and the total stay in sync. */
+function ordersSearchCondition(q: string) {
+  const needle = `%${q}%`;
+  return sql`(
+    ${ilike(orders.marketplaceOrderId, needle)}
+    OR EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = ${orders.id} AND s.awb_number ILIKE ${needle})
+    OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = ${orders.id} AND oi.marketplace_sku ILIKE ${needle})
+  )`;
+}
+
 ordersRouter.get("/", async (req, res, next) => {
   try {
     const accountIds = await db
@@ -272,6 +304,9 @@ ordersRouter.get("/", async (req, res, next) => {
     // because GET / is paginated -- a client-side-only filter over one
     // loaded page would undercount against the real total.
     const todayOnly = req.query.today === "1" || req.query.today === "true";
+    const parsedQuery = ordersListQuerySchema.safeParse(req.query);
+    const q = parsedQuery.success ? parsedQuery.data.q : undefined;
+    const statusFilter = parsedQuery.success ? parsedQuery.data.status : undefined;
 
     // SKU(s) and AWB come along inline (a correlated subquery for the SKU
     // list, a left join for the one shipment row an order has) so the list
@@ -310,6 +345,8 @@ ordersRouter.get("/", async (req, res, next) => {
             and(
               inArray(orders.marketplaceAccountId, accountIds.map((a) => a.id)),
               todayOnly ? sql`${orders.orderedAt} >= date_trunc('day', now())` : undefined,
+              statusFilter ? eq(orders.status, statusFilter as (typeof ORDER_STATUS_VALUES)[number]) : undefined,
+              q ? ordersSearchCondition(q) : undefined,
             ),
           )
           .orderBy(desc(orders.orderedAt))
@@ -334,6 +371,9 @@ ordersRouter.get("/count", async (req, res, next) => {
     if (!accountIds.length) return res.json({ total: 0 });
 
     const todayOnly = req.query.today === "1" || req.query.today === "true";
+    const parsedQuery = ordersListQuerySchema.safeParse(req.query);
+    const q = parsedQuery.success ? parsedQuery.data.q : undefined;
+    const statusFilter = parsedQuery.success ? parsedQuery.data.status : undefined;
     const [row] = await db
       .select({ total: sql<number>`count(*)::int` })
       .from(orders)
@@ -341,6 +381,8 @@ ordersRouter.get("/count", async (req, res, next) => {
         and(
           inArray(orders.marketplaceAccountId, accountIds.map((a) => a.id)),
           todayOnly ? sql`${orders.orderedAt} >= date_trunc('day', now())` : undefined,
+          statusFilter ? eq(orders.status, statusFilter as (typeof ORDER_STATUS_VALUES)[number]) : undefined,
+          q ? ordersSearchCondition(q) : undefined,
         ),
       );
     res.json({ total: row?.total ?? 0 });

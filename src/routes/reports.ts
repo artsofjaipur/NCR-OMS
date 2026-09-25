@@ -13,6 +13,7 @@ import {
   partyPayments,
   payoutBatches,
   purchaseEntries,
+  skus,
 } from "../db/schema";
 import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
 import { requireSection } from "../security/permissions";
@@ -260,6 +261,114 @@ reportsRouter.get("/turnover", async (req, res, next) => {
       byDay,
       byBrand,
       byStore,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ---------------------------------------------------------------------------
+ * PRODUCTS — top-selling SKU, top-selling size, and a store x SKU x size
+ * breakdown. Added by Claude (Anthropic) 2026-09-25, user request
+ * (Hinglish): "ek konsa sku sabse jyada sale hora pata nahi chal raha /
+ * konsi size sabse jyada sale hori / konse store par order aara konse sku
+ * me size me abhi system nahi bana sayd." Same ?start=&end= period as
+ * /turnover (default: last 90 days), so this tab and the Turnover tab
+ * always agree on "the period" without a second date picker.
+ *
+ * "SKU" here means the CANONICAL sku (skus.code), not the raw marketplace
+ * string (order_items.marketplace_sku) -- the same internal SKU sells under
+ * different marketplace SKU strings on different platforms (that's what
+ * the SKU-mapping feature is for), so counting by raw marketplace string
+ * would undercount a genuinely top-selling product by splitting it across
+ * several rows. Falls back to the raw marketplace_sku/variant_size only for
+ * line items that were never mapped to an internal SKU (skuId IS NULL) --
+ * left in rather than dropped, so an unmapped item's sales don't silently
+ * vanish from a "top selling" report.
+ * ------------------------------------------------------------------------- */
+
+const productsQuerySchema = z.object({
+  start: z.string().optional(),
+  end: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
+
+reportsRouter.get("/products", async (req, res, next) => {
+  try {
+    const companyId = req.session!.companyId;
+    const parsedQuery = productsQuerySchema.safeParse(req.query);
+    const start = parsedQuery.success && parsedQuery.data.start ? new Date(parsedQuery.data.start) : new Date(Date.now() - 89 * 24 * 3600 * 1000);
+    const end = parsedQuery.success && parsedQuery.data.end ? new Date(parsedQuery.data.end) : new Date();
+    const limit = parsedQuery.success && parsedQuery.data.limit ? parsedQuery.data.limit : 300;
+
+    const skuLabel = sql<string>`coalesce(${skus.code}, ${orderItems.marketplaceSku})`;
+    const sizeLabel = sql<string>`coalesce(nullif(${skus.size}, ''), nullif(${orderItems.variantSize}, ''), 'Unspecified')`;
+    const period = and(eq(brands.companyId, companyId), gte(orders.orderedAt, start), lte(orders.orderedAt, end));
+
+    const topSkus = await db
+      .select({
+        sku: skuLabel,
+        productTitle: sql<string>`coalesce(min(${skus.productTitle}), min(${orderItems.productTitleSnapshot}))`,
+        qty: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int`,
+        revenue: sql<string>`coalesce(sum(${orderItems.invoiceAmount}), 0)::text`,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .leftJoin(skus, eq(skus.id, orderItems.skuId))
+      .where(period)
+      .groupBy(skuLabel)
+      .orderBy(desc(sql`coalesce(sum(${orderItems.quantity}), 0)`))
+      .limit(limit);
+
+    const topSizes = await db
+      .select({
+        size: sizeLabel,
+        qty: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int`,
+        revenue: sql<string>`coalesce(sum(${orderItems.invoiceAmount}), 0)::text`,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .leftJoin(skus, eq(skus.id, orderItems.skuId))
+      .where(period)
+      .groupBy(sizeLabel)
+      .orderBy(desc(sql`coalesce(sum(${orderItems.quantity}), 0)`))
+      .limit(limit);
+
+    // Store x SKU x size -- "konse store par order aara konse sku me size
+    // me" -- ordered store-then-top-sellers-within-that-store so the table
+    // reads as one block per store rather than qty-sorted globally (which
+    // would interleave stores and be harder to scan for "what's moving on
+    // Meesho specifically").
+    const byStoreSkuSize = await db
+      .select({
+        store: marketplaceAccounts.sellerAccountLabel,
+        marketplace: marketplaceAccounts.marketplace,
+        sku: skuLabel,
+        size: sizeLabel,
+        qty: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int`,
+        revenue: sql<string>`coalesce(sum(${orderItems.invoiceAmount}), 0)::text`,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .leftJoin(skus, eq(skus.id, orderItems.skuId))
+      .where(period)
+      .groupBy(marketplaceAccounts.sellerAccountLabel, marketplaceAccounts.marketplace, skuLabel, sizeLabel)
+      .orderBy(asc(marketplaceAccounts.sellerAccountLabel), desc(sql`coalesce(sum(${orderItems.quantity}), 0)`))
+      .limit(limit);
+
+    res.json({
+      start: start.toISOString(),
+      end: end.toISOString(),
+      limit,
+      topSkus,
+      topSizes,
+      byStoreSkuSize,
     });
   } catch (err) {
     next(err);

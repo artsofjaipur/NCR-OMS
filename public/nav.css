@@ -178,6 +178,26 @@ body.has-nav {
 }
 .np-add-company:hover { background: rgba(212,175,55,.1); color: #f6d466; }
 
+/* ---------- content theme picker — added by Claude (Anthropic) 2026-09-25,
+   user request: "4-5 theme bhi add karo jisse acha professional ban jaye".
+   Same visual treatment as .np-switch above -- this sidebar rail itself
+   stays fixed dark-navy across every theme on purpose; only the page
+   content (app.css vars) changes. See app.css for the theme definitions. */
+.np-theme-label { font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,.4); margin-top: 10px; display: block; }
+.np-theme {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 11px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  border: 1px solid rgba(212,175,55,.35);
+  background: rgba(212,175,55,.08);
+  color: #f2ecdc;
+  font-family: inherit;
+  cursor: pointer;
+}
+.np-theme option { background: #14142a; color: #f2ecdc; }
+
 /* ---------- assistant floating widget ---------- */
 .asst-fab {
   position: fixed;
