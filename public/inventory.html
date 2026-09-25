@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<script>try{var t=localStorage.getItem("ncr_theme");if(t&&t!=="midnight-gold")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Inventory — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+<link rel="stylesheet" href="/nav.css" />
+</head>
+<body>
+
+<!-- Inventory / Stock report (SKU × size × product) — added 2026-09-25 per
+     user request: "stock entry stock report sku size product wise". Current
+     stock is always live SUM(delta) over the inventory ledger (never a
+     stored counter) — see src/routes/inventory.ts. -->
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Inventory</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <a href="/party" class="tb-logout" style="text-decoration:none">📇 Stock In</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <section class="panel wide">
+    <div class="section-head-row">
+      <div class="panel-head" style="margin-bottom:0">
+        <h2 class="serif">Current Stock — SKU × Size × Product</h2>
+        <span class="chip chip-dim" id="inv-count">0</span>
+      </div>
+    </div>
+    <p class="panel-sub" style="margin-top:10px">Live figure — har Stock In / order dispatch / return se turant update hota hai. Naya stock add karne ke liye <a href="/party">Stock In</a> use karo.</p>
+
+    <div class="fgrid fgrid-tight" style="grid-template-columns:2fr 1fr;margin:10px 0 4px">
+      <label>Search (SKU / product / size / color) <input id="inv-search" type="text" placeholder="e.g. HT-03 or Kurtis or M" /></label>
+      <label>Brand <select id="inv-brand"><option value="">— sabhi brands —</option></select></label>
+    </div>
+
+    <div class="kpis kpis-2" style="margin:14px 0">
+      <div class="kpi">
+        <div class="kpi-label">Total SKUs in stock</div>
+        <div class="kpi-value" id="inv-kpi-skus">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Total Pieces</div>
+        <div class="kpi-value" id="inv-kpi-pieces">—</div>
+      </div>
+    </div>
+
+    <div class="tablewrap"><table class="ftable" id="inv-table">
+      <thead><tr><th>SKU</th><th>Product</th><th>Size</th><th>Color</th><th>Brand</th><th style="text-align:right">Total Stock</th><th>Warehouse-wise</th></tr></thead>
+      <tbody><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <section class="panel wide">
+    <div class="panel-head"><h2 class="serif">Stock by Product</h2></div>
+    <div class="tablewrap"><table class="ftable" id="inv-by-product">
+      <thead><tr><th>Product</th><th style="text-align:right">Total Stock</th></tr></thead>
+      <tbody><tr><td colspan="2" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <section class="panel wide">
+    <div class="panel-head"><h2 class="serif">Stock by Size</h2></div>
+    <div class="tablewrap"><table class="ftable" id="inv-by-size">
+      <thead><tr><th>Size</th><th style="text-align:right">Total Stock</th></tr></thead>
+      <tbody><tr><td colspan="2" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+</main>
+
+<script src="/inventory.js"></script>
+<script src="/nav.js"></script>
+</body>
+</html>

@@ -65,7 +65,7 @@
     { sec: "orders", ico: "📊", label: "Dashboard", href: "/app" },
     { sec: "orders", ico: "🧾", label: "Orders", href: "/orders" },
     { sec: "scan", ico: "📦", label: "Scan Station", href: "/scan" },
-    { sec: "inventory", ico: "📚", label: "Inventory", href: "/reports", inPageNav: "reports", tab: "fees" },
+    { sec: "inventory", ico: "📚", label: "Inventory", href: "/inventory" },
     { sec: "reports", ico: "📊", label: "Reports", href: "/reports", inPageNav: "reports" },
     { sec: "finance", ico: "💰", label: "Finance", href: "/finance", inPageNav: "finance" },
     // Marketplace payment/settlement-sheet reconciliation — added 2026-09-25

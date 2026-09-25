@@ -62,12 +62,27 @@
     <div class="section-head-row">
       <div class="panel-head" style="margin-bottom:0">
         <h2 class="serif">Stock In</h2>
-        <span class="chip chip-dim">PURCHASE BILL</span>
+        <span class="chip chip-dim" id="pi-count">0</span>
       </div>
-      <button type="button" class="btn" id="pi-open-btn" style="width:auto;padding:10px 18px">＋ Stock In (Purchase Bill)</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn-ghost" id="pi-import-btn" style="width:auto;padding:10px 18px">⬆ Import Stock Sheet (CSV)</button>
+        <button type="button" class="btn" id="pi-open-btn" style="width:auto;padding:10px 18px">＋ Stock In Entry</button>
+      </div>
     </div>
-    <p class="panel-sub" style="margin-top:10px">Kisi party se stock receive karo — inventory aur ledger dono auto-update ho jayenge.</p>
+    <p class="panel-sub" style="margin-top:10px">Har entry auto-calculate hoti hai (Qty × Rate + GST = Payable) — edit/delete dono available hain, sab kuch dialog box me.</p>
     <div id="setup-result" class="result" hidden></div>
+
+    <label style="max-width:280px;display:block;margin:10px 0">Party se filter <select id="pi-filter-supplier"><option value="">— sabhi parties —</option></select></label>
+
+    <div class="tablewrap"><table class="ftable" id="pi-table">
+      <thead><tr>
+        <th>Date</th><th>Party</th><th>SKU / Product</th><th style="text-align:right">Qty</th><th style="text-align:right">Rate</th>
+        <th style="text-align:right">Subtotal</th><th style="text-align:right">GST</th><th style="text-align:right">Payable</th>
+        <th>Chalan</th><th>Bill No.</th><th style="text-align:right">Paid</th><th style="text-align:right">Balance Due</th>
+        <th style="text-align:right">Running Bal.</th><th></th>
+      </tr></thead>
+      <tbody><tr><td colspan="14" class="empty">Loading…</td></tr></tbody>
+    </table></div>
   </section>
 
 </main>
