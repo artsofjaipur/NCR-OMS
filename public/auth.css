@@ -154,6 +154,22 @@ input.invalid { border-color: #e0655f; box-shadow: 0 0 0 3px rgba(224,101,95,0.1
 .btn.loading .spin { display: inline-block; }
 @keyframes rot { to { transform: rotate(360deg); } }
 
+/* Company picker -- shown only when one email+password matches more than
+   one company (same password reused across companies). Real company
+   names, not an id the person has to know or type. */
+.company-pick { margin-top: 18px; }
+.company-pick .sub { margin-bottom: 12px; }
+.company-pick-list { display: flex; flex-direction: column; gap: 8px; }
+.company-pick-list button {
+  width: 100%; text-align: left; padding: 13px 16px; border-radius: 12px;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--panel-border);
+  color: var(--text); font-family: inherit; font-size: 14.5px; font-weight: 600;
+  cursor: pointer; transition: border-color 0.2s, background 0.2s, transform 0.16s;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.company-pick-list button:hover { border-color: var(--gold); background: rgba(212,175,94,0.08); transform: translateY(-1px); }
+.company-pick-list button .role-chip { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.4px; }
+
 .footnote { text-align: center; margin-top: 22px; font-size: 14px; color: var(--muted); }
 .backlink {
   position: fixed; top: 22px; left: 24px; z-index: 10; color: var(--muted);
