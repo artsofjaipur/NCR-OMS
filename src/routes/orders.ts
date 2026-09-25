@@ -56,12 +56,23 @@ ordersRouter.post("/import/:marketplace", async (req, res, next) => {
     }
 
     const normalizedOrders = parser(body.csv);
-    const results: { marketplaceOrderId: string; orderId?: number; created?: boolean; error?: string }[] = [];
+    const results: { marketplaceOrderId: string; orderId?: number; created?: boolean; error?: string; stockWarning?: string }[] = [];
 
     for (const normalized of normalizedOrders) {
       try {
         const result = await ingestOrder(body.marketplaceAccountId, body.warehouseId, normalized);
-        results.push({ marketplaceOrderId: normalized.marketplaceOrderId, orderId: result.orderId, created: result.created });
+        results.push({
+          marketplaceOrderId: normalized.marketplaceOrderId,
+          orderId: result.orderId,
+          created: result.created,
+          // Order still imported -- this is a heads-up, not a failure. See
+          // reserveStock's `strict: false`: new marketplace orders are never
+          // blocked by a stock count this app was never told, but a SKU
+          // that went negative needs a Stock In when you get the chance.
+          stockWarning: result.stockWarnings?.length
+            ? `Imported, but no recorded stock for: ${result.stockWarnings.join(", ")} — do a Stock In when you can`
+            : undefined,
+        });
       } catch (err) {
         const message =
           err instanceof UnmappedSkuError || err instanceof InsufficientStockError ? err.message : "Ingestion failed for this order";
@@ -69,7 +80,12 @@ ordersRouter.post("/import/:marketplace", async (req, res, next) => {
       }
     }
 
-    res.status(207).json({ imported: results.filter((r) => r.orderId).length, failed: results.filter((r) => r.error).length, results });
+    res.status(207).json({
+      imported: results.filter((r) => r.orderId).length,
+      failed: results.filter((r) => r.error).length,
+      stockWarnings: results.filter((r) => r.stockWarning).length,
+      results,
+    });
   } catch (err) {
     next(err);
   }

@@ -13,6 +13,13 @@ export class UnmappedSkuError extends Error {
 export interface IngestResult {
   orderId: number;
   created: boolean;
+  /**
+   * SKU codes whose recorded stock couldn't cover this order (reservation
+   * still went through, see reserveStock's `strict: false`) -- surfaced so
+   * the caller can tell the user "imported, but do a Stock In for these"
+   * instead of the shortfall going unnoticed.
+   */
+  stockWarnings?: string[];
 }
 
 /**
@@ -61,6 +68,8 @@ export async function ingestOrder(
       })
       .returning({ id: orders.id });
 
+    const stockWarnings: string[] = [];
+
     for (const item of normalized.items) {
       const [mapping] = await tx
         .select({ skuId: marketplaceSkuMap.skuId })
@@ -100,13 +109,16 @@ export async function ingestOrder(
       // Advisory lock first, so the stock check below is serialized against
       // any other in-flight reservation for the same SKU in this warehouse.
       await lockSkuWarehouse(tx, mapping.skuId, warehouseId);
-      await reserveStock(tx, {
-        skuId: mapping.skuId,
-        warehouseId,
-        quantity: item.quantity,
-        referenceType: "order",
-        referenceId: String(order.id),
-      });
+      // strict: false -- see reserveStock's own comment. A marketplace order
+      // that's already confirmed (and often already shipped off-system)
+      // should never be rejected just because this app hasn't recorded a
+      // Stock In yet; going negative is flagged back to the user instead.
+      const { shortfall } = await reserveStock(
+        tx,
+        { skuId: mapping.skuId, warehouseId, quantity: item.quantity, referenceType: "order", referenceId: String(order.id) },
+        { strict: false },
+      );
+      if (shortfall > 0) stockWarnings.push(item.marketplaceSku);
     }
 
     if (normalized.shipment) {
@@ -117,6 +129,6 @@ export async function ingestOrder(
       });
     }
 
-    return { orderId: order.id, created: true };
+    return { orderId: order.id, created: true, stockWarnings: stockWarnings.length ? stockWarnings : undefined };
   });
 }

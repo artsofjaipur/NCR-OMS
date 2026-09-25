@@ -179,6 +179,7 @@
         }
         var imported = r.data.imported || 0;
         var failed = r.data.failed || 0;
+        var stockWarnCount = r.data.stockWarnings || 0;
         var html = "<b class='ok'>" + imported + " order" + (imported === 1 ? "" : "s") + " imported</b>" +
           (failed ? ", <b>" + failed + " failed</b>" : "") + ".";
         var errs = (r.data.results || []).filter(function (x) { return x.error; }).slice(0, 5);
@@ -186,6 +187,15 @@
           html += "<ul>" + errs.map(function (x) {
             return "<li>" + esc(x.order || x.marketplaceOrderId || "row") + ": " + esc(x.error) + "</li>";
           }).join("") + "</ul>";
+        }
+        // Orders with no recorded stock still import (never blocked on a
+        // stock count this app was never told) -- but flagged here so it's
+        // not a silent negative number nobody notices.
+        if (stockWarnCount) {
+          var warnRows = (r.data.results || []).filter(function (x) { return x.stockWarning; }).slice(0, 5);
+          html += "<div style='margin-top:8px;color:var(--orange)'>⚠ " + stockWarnCount + " order" + (stockWarnCount === 1 ? "" : "s") +
+            " imported with no recorded stock for some SKU(s) — do a Stock In (Party Master page) when you can:</div>" +
+            "<ul>" + warnRows.map(function (x) { return "<li>" + esc(x.marketplaceOrderId) + ": " + esc(x.stockWarning) + "</li>"; }).join("") + "</ul>";
         }
         showResult(imported > 0 ? "ok" : "err", html);
         loadOrders();

@@ -38,15 +38,36 @@ export async function lockSkuWarehouse(tx: Tx, skuId: number, warehouseId: numbe
 
 /**
  * Reserves stock for an order line, blocked at the write if it would
- * oversell. Caller must already hold the advisory lock for this
- * (skuId, warehouseId) pair within the current transaction.
+ * oversell -- unless `strict: false` is passed, in which case the
+ * reservation is written anyway (stock can go negative) and the shortfall
+ * is returned instead of thrown.
+ *
+ * `strict: false` exists because this app's stock ledger starts truly
+ * empty: the 2026-07 historical order-history bulk import deliberately
+ * skipped writing ORDER_RESERVED rows for orders that were already
+ * dispatched off-system (see BRAIN.md), so `getCurrentStock` reads 0 for
+ * every SKU until someone records a real Stock In. Blocking brand-new
+ * marketplace orders on that -- rejecting an order Meesho/Snapdeal/Flipkart
+ * already confirmed and already shipped, just because this app hasn't been
+ * told the physical stock count yet -- would make CSV upload permanently
+ * broken for every company on this platform until they've done a full
+ * manual stock reconciliation. Going negative here is the honest signal
+ * that a stock-in is overdue for that SKU, surfaced back to the caller
+ * (see `shortfall` below) rather than hidden -- it does not silently
+ * pretend the stock exists.
+ *
+ * Caller must already hold the advisory lock for this (skuId, warehouseId)
+ * pair within the current transaction.
  */
 export async function reserveStock(
   tx: Tx,
   params: { skuId: number; warehouseId: number; quantity: number; referenceType: string; referenceId: string },
-): Promise<void> {
+  opts: { strict?: boolean } = {},
+): Promise<{ shortfall: number }> {
+  const strict = opts.strict ?? true;
   const available = await getCurrentStock(tx, params.skuId, params.warehouseId);
-  if (available < params.quantity) {
+  const shortfall = Math.max(0, params.quantity - available);
+  if (shortfall > 0 && strict) {
     throw new InsufficientStockError(params.skuId, params.warehouseId, params.quantity, available);
   }
   await tx.insert(inventoryLedger).values({
@@ -57,6 +78,7 @@ export async function reserveStock(
     referenceType: params.referenceType,
     referenceId: params.referenceId,
   });
+  return { shortfall };
 }
 
 export async function receiveStock(
