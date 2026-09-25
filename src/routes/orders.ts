@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { orders, marketplaceAccounts, brands, shipments } from "../db/schema";
 import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
@@ -158,8 +158,26 @@ const AWB_ORDER_KEYS = [
   "order no",
   "order number",
   "orderid",
+  // "SubOrderReferenceNo." -- seen on a real courier handover/manifest
+  // sheet (2026-09-25); the pick() match is on trimmed+lowercased header
+  // text, so the trailing period is part of the literal here.
+  "suborderreferenceno.",
+  "suborderreferenceno",
+  "reference code",
+  "referencecode",
 ];
-const AWB_KEYS = ["awb", "awb number", "awb no", "awbno", "courier awb", "tracking id", "tracking number", "waybill", "waybill number"];
+const AWB_KEYS = [
+  "awb",
+  "awb number",
+  "awb no",
+  "awbno",
+  "awbnumber",
+  "courier awb",
+  "tracking id",
+  "tracking number",
+  "waybill",
+  "waybill number",
+];
 const CARRIER_KEYS = ["courier", "carrier", "courier name", "courier partner", "logistics partner", "shipping partner"];
 
 function pickAwbField(rec: Record<string, string>, keys: string[]): string {
@@ -248,6 +266,12 @@ ordersRouter.get("/", async (req, res, next) => {
     // widget); a real Orders page can ask for more with ?limit=&offset=.
     const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 2000);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
+    // ?today=1 -- Orders page "Today" filter (user request: "ek filter
+    // karne ka option bhi ho jisse conferm ho jaye ki aaj kitne order hai").
+    // Same date convention as dashboard.ts's ordersToday KPI. Server-side
+    // because GET / is paginated -- a client-side-only filter over one
+    // loaded page would undercount against the real total.
+    const todayOnly = req.query.today === "1" || req.query.today === "true";
 
     // SKU(s) and AWB come along inline (a correlated subquery for the SKU
     // list, a left join for the one shipment row an order has) so the list
@@ -265,6 +289,10 @@ ordersRouter.get("/", async (req, res, next) => {
             orderedAt: orders.orderedAt,
             holdReason: orders.holdReason,
             awbNumber: shipments.awbNumber,
+            // "Packed" is the scan-station signal (shipments.packedAt), kept
+            // deliberately separate from orders.status -- see #10, user
+            // request: scanning should be visible back on the Orders page.
+            packedAt: shipments.packedAt,
             skuSummary: sql<string>`(SELECT string_agg(DISTINCT oi.marketplace_sku, ', ') FROM order_items oi WHERE oi.order_id = ${orders.id})`,
             // The order's own status field doesn't change just because a
             // return exists (a DELIVERED order that comes back is still
@@ -278,7 +306,12 @@ ordersRouter.get("/", async (req, res, next) => {
           })
           .from(orders)
           .leftJoin(shipments, eq(shipments.orderId, orders.id))
-          .where(inArray(orders.marketplaceAccountId, accountIds.map((a) => a.id)))
+          .where(
+            and(
+              inArray(orders.marketplaceAccountId, accountIds.map((a) => a.id)),
+              todayOnly ? sql`${orders.orderedAt} >= date_trunc('day', now())` : undefined,
+            ),
+          )
           .orderBy(desc(orders.orderedAt))
           .limit(limit)
           .offset(offset)
@@ -300,10 +333,16 @@ ordersRouter.get("/count", async (req, res, next) => {
 
     if (!accountIds.length) return res.json({ total: 0 });
 
+    const todayOnly = req.query.today === "1" || req.query.today === "true";
     const [row] = await db
       .select({ total: sql<number>`count(*)::int` })
       .from(orders)
-      .where(inArray(orders.marketplaceAccountId, accountIds.map((a) => a.id)));
+      .where(
+        and(
+          inArray(orders.marketplaceAccountId, accountIds.map((a) => a.id)),
+          todayOnly ? sql`${orders.orderedAt} >= date_trunc('day', now())` : undefined,
+        ),
+      );
     res.json({ total: row?.total ?? 0 });
   } catch (err) {
     next(err);

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db/client";
 import { orders, orderItems, shipments, returns, inventoryLedger, marketplaceAccounts, brands } from "../../db/schema";
 import { HttpError } from "../../middleware/errorHandler";
@@ -8,6 +8,18 @@ export class OrderNotFoundError extends Error {
     super(`Order ${orderId} not found`);
   }
 }
+
+/**
+ * Every place stock gets reserved for an order writes its own referenceType
+ * on the ledger row: CSV/marketplace ingestion uses "order" (ingest.ts),
+ * the Single Entry form uses "manual_entry" (entry.ts). Cancel/delete both
+ * need to find and release a reservation regardless of which path created
+ * it -- filtering on just "order" here missed every manually-entered
+ * order's reservation, silently leaving its stock "reserved" forever after
+ * a cancel (found 2026-09-25 while verifying the new Orders-page Cancel
+ * button against a real manual-entry order).
+ */
+const RESERVATION_REFERENCE_TYPES = ["order", "manual_entry"];
 
 /**
  * Every order route re-derives the order's company from its marketplace
@@ -93,7 +105,7 @@ export async function updateOrder(orderId: number, patch: OrderPatch) {
         .from(inventoryLedger)
         .where(
           and(
-            eq(inventoryLedger.referenceType, "order"),
+            inArray(inventoryLedger.referenceType, RESERVATION_REFERENCE_TYPES),
             eq(inventoryLedger.referenceId, String(orderId)),
             eq(inventoryLedger.reason, "ORDER_RESERVED"),
           ),
@@ -161,7 +173,7 @@ export async function deleteOrder(orderId: number): Promise<void> {
       .from(inventoryLedger)
       .where(
         and(
-          eq(inventoryLedger.referenceType, "order"),
+          inArray(inventoryLedger.referenceType, RESERVATION_REFERENCE_TYPES),
           eq(inventoryLedger.referenceId, String(orderId)),
           eq(inventoryLedger.reason, "ORDER_RESERVED"),
         ),

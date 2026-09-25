@@ -8,9 +8,9 @@ import { Router } from "express";
 import { z } from "zod";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { returns, orders, orderItems, marketplaceAccounts, brands, skus } from "../db/schema";
+import { returns, orders, orderItems, marketplaceAccounts, brands, skus, companies } from "../db/schema";
 import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
-import { requireSection } from "../security/permissions";
+import { requireSection, scannableCompanyIds } from "../security/permissions";
 import { HttpError } from "../middleware/errorHandler";
 import { initiateReturn, markReturnReceived, recordQcResult, restockReturn } from "../modules/returns/returns";
 import { parseCsvToRecords } from "../ingestion/csv";
@@ -286,6 +286,14 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
 // ---------------------------------------------------------------------------
 // RETURN RECEIVE SCAN — scan the reverse-AWB / order label when the box
 // physically arrives. Marks the return RECEIVED so the floor sees it in.
+//
+// Cross-company by design, same as dispatch.ts's pack scan (2026-09-25,
+// user request): "esa hi return me ho, nahi to pata nahi chalega konsi
+// company ya brand ka hai" — one return-receive station for every
+// company/brand this person has returns access to, no company switch first,
+// and the matched company/brand is always named back so it's never
+// ambiguous. scannableCompanyIds() is the same trust boundary the pack-scan
+// route uses.
 // ---------------------------------------------------------------------------
 
 const scanSchema = z.object({ code: z.string().trim().min(3).max(120) });
@@ -293,7 +301,8 @@ const scanSchema = z.object({ code: z.string().trim().min(3).max(120) });
 returnsRouter.post("/scan", requireRole("OWNER", "ADMIN", "OPS"), async (req, res, next) => {
   try {
     const body = scanSchema.parse(req.body);
-    const companyId = req.session!.companyId;
+    const companyIds = await scannableCompanyIds(req.session!.userId, "returns");
+    if (!companyIds.length) throw new HttpError(403, "No returns access in any company");
     const code = body.code;
 
     const rows = await db
@@ -304,6 +313,7 @@ returnsRouter.post("/scan", requireRole("OWNER", "ADMIN", "OPS"), async (req, re
         deliveredAt: returns.deliveredAt,
         orderNo: orders.marketplaceOrderId,
         brand: brands.name,
+        companyName: companies.displayName,
         marketplace: marketplaceAccounts.marketplace,
         skuCode: skus.code,
       })
@@ -311,11 +321,12 @@ returnsRouter.post("/scan", requireRole("OWNER", "ADMIN", "OPS"), async (req, re
       .innerJoin(orders, eq(orders.id, returns.orderId))
       .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
       .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .innerJoin(companies, eq(companies.id, brands.companyId))
       .leftJoin(orderItems, eq(orderItems.orderId, orders.id))
       .leftJoin(skus, eq(skus.id, orderItems.skuId))
       .where(
         and(
-          eq(brands.companyId, companyId),
+          inArray(brands.companyId, companyIds),
           inArray(returns.status, ["INITIATED", "IN_TRANSIT"]),
           code.includes("-") ? eq(orders.marketplaceOrderId, code) : eq(returns.reverseAwb, code)
         )
@@ -324,7 +335,7 @@ returnsRouter.post("/scan", requireRole("OWNER", "ADMIN", "OPS"), async (req, re
 
     const found = rows[0];
     if (!found) {
-      throw new HttpError(404, `No open return matches "${code}" — upload the return sheet first if this is a new return`);
+      throw new HttpError(404, `No open return matches "${code}" in any company you have returns access to — upload the return sheet first if this is a new return`);
     }
 
     await markReturnReceived(found.returnId, new Date());
@@ -332,6 +343,7 @@ returnsRouter.post("/scan", requireRole("OWNER", "ADMIN", "OPS"), async (req, re
     res.json({
       returnId: found.returnId,
       order: found.orderNo,
+      company: found.companyName,
       brand: found.brand,
       marketplace: found.marketplace,
       sku: found.skuCode,

@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { orders, shipments, marketplaceAccounts, brands } from "../db/schema";
+import { orders, shipments, marketplaceAccounts, brands, companies } from "../db/schema";
 import { requireAuth, requireCompanyScope } from "../middleware/auth";
-import { requireSection } from "../security/permissions";
+import { requireSection, scannableCompanyIds } from "../security/permissions";
 import { HttpError } from "../middleware/errorHandler";
 import { markShipmentPacked } from "../modules/dispatch/dailyDispatch";
 
@@ -41,6 +41,17 @@ dispatchRouter.post("/shipments/:id/packed", async (req, res, next) => {
 // the label; the shipment is marked packed and the order flips to
 // READY_TO_DISPATCH so everyone can see "packed, ready to go".
 // Idempotent: scanning the same label twice never double-fires.
+//
+// Cross-company by design (2026-09-25, user request: "scan ek jagah se kare
+// automatically vaha jakr mark ho jaye jis company/brand/store ka ho"): one
+// person on the floor packs parcels for every company/brand they have
+// dispatch access to, and shouldn't have to switch company first just to
+// scan the next label. scannableCompanyIds() (src/security/permissions.ts)
+// is the trust boundary — it only ever includes a company this scanning
+// user's own email has an ACTIVE row in, with dispatch access there, never
+// a company they don't belong to. The matched company/brand/marketplace is
+// always named back in the response so it's never ambiguous which one just
+// got scanned.
 // ---------------------------------------------------------------------------
 
 const packScanSchema = z.object({
@@ -50,7 +61,8 @@ const packScanSchema = z.object({
 dispatchRouter.post("/scan", async (req, res, next) => {
   try {
     const body = packScanSchema.parse(req.body);
-    const companyId = req.session!.companyId;
+    const companyIds = await scannableCompanyIds(req.session!.userId, "dispatch");
+    if (!companyIds.length) throw new HttpError(403, "No dispatch access in any company");
     const code = body.code;
 
     // The label may carry an AWB, a marketplace order id, or a shipment id.
@@ -70,16 +82,18 @@ dispatchRouter.post("/scan", async (req, res, next) => {
         marketplace: marketplaceAccounts.marketplace,
         sellerAccountLabel: marketplaceAccounts.sellerAccountLabel,
         brandName: brands.name,
+        companyName: companies.displayName,
       })
       .from(shipments)
       .innerJoin(orders, eq(orders.id, shipments.orderId))
       .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
-      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId));
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .innerJoin(companies, eq(companies.id, brands.companyId));
 
     let candidates = await baseSelect
       .where(
         and(
-          eq(brands.companyId, companyId),
+          inArray(brands.companyId, companyIds),
           or(eq(shipments.awbNumber, code), eq(orders.marketplaceOrderId, code))
         )
       )
@@ -87,13 +101,13 @@ dispatchRouter.post("/scan", async (req, res, next) => {
 
     if (!candidates.length && Number.isInteger(numeric) && numeric > 0 && numeric < 1_000_000_000) {
       candidates = await baseSelect
-        .where(and(eq(brands.companyId, companyId), eq(shipments.id, numeric)))
+        .where(and(inArray(brands.companyId, companyIds), eq(shipments.id, numeric)))
         .limit(1);
     }
 
     const found = candidates[0];
     if (!found) {
-      throw new HttpError(404, `No shipment found for "${code}" in your workspace`);
+      throw new HttpError(404, `No shipment found for "${code}" in any company you have dispatch access to`);
     }
 
     if (!found.packedAt) {
@@ -108,6 +122,7 @@ dispatchRouter.post("/scan", async (req, res, next) => {
     res.json({
       shipmentId: found.shipmentId,
       order: found.marketplaceOrderId,
+      company: found.companyName,
       brand: found.brandName,
       marketplace: found.marketplace,
       sellerAccount: found.sellerAccountLabel,
@@ -116,6 +131,28 @@ dispatchRouter.post("/scan", async (req, res, next) => {
       packed: true,
       alreadyPacked: Boolean(found.packedAt),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Shipments packed today, across every company this user has dispatch
+ * access to — the Scan Station's "scanned today" counter. Same date
+ * convention as dashboard.ts's ordersToday KPI (date_trunc('day', now())).
+ */
+dispatchRouter.get("/scan/today-count", async (req, res, next) => {
+  try {
+    const companyIds = await scannableCompanyIds(req.session!.userId, "dispatch");
+    if (!companyIds.length) return res.json({ count: 0 });
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(shipments)
+      .innerJoin(orders, eq(orders.id, shipments.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .where(and(inArray(brands.companyId, companyIds), sql`${shipments.packedAt} >= date_trunc('day', now())`));
+    res.json({ count: row?.count ?? 0 });
   } catch (err) {
     next(err);
   }
