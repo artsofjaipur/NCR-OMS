@@ -5,8 +5,13 @@ import { NormalizedOrder } from "../../ingestion/types";
 import { lockSkuWarehouse, reserveStock } from "../inventory/ledger";
 
 export class UnmappedSkuError extends Error {
+  /** The raw marketplace SKU string, exposed structurally (not just in the
+   * message) so a caller can offer a "map this SKU now" fix-it action
+   * instead of making the user retype it from the error text. */
+  public readonly marketplaceSku: string;
   constructor(marketplaceSku: string) {
     super(`No SKU mapping found for marketplace SKU "${marketplaceSku}" — fix the mapping and retry`);
+    this.marketplaceSku = marketplaceSku;
   }
 }
 

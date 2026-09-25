@@ -178,14 +178,34 @@
           return;
         }
         var imported = r.data.imported || 0;
+        var newCount = r.data.newOrders != null ? r.data.newOrders : imported;
+        var dupCount = r.data.duplicateOrders || 0;
         var failed = r.data.failed || 0;
         var stockWarnCount = r.data.stockWarnings || 0;
         var html = "<b class='ok'>" + imported + " order" + (imported === 1 ? "" : "s") + " imported</b>" +
           (failed ? ", <b>" + failed + " failed</b>" : "") + ".";
+        // "Imported" used to lump brand-new orders and already-existing ones
+        // (re-uploaded/overlapping rows, updated in place — safe, but silent)
+        // into one number. User request: "duplicate order ka bhi pata chalna
+        // chahiye" — so every duplicate is now called out by name, not just
+        // counted.
+        if (dupCount) {
+          html += "<div style='margin-top:6px;color:var(--muted)'>" + newCount + " new, <b>" + dupCount +
+            "</b> already existed in the system — updated (status refreshed), not re-created.</div>";
+          var dupRows = (r.data.results || []).filter(function (x) { return x.orderId && x.created === false; }).slice(0, 8);
+          if (dupRows.length) {
+            html += "<div style='margin-top:4px;font-size:12.5px;color:var(--muted)'>Duplicate order no.(s): " +
+              dupRows.map(function (x) { return esc(x.marketplaceOrderId); }).join(", ") +
+              (dupCount > dupRows.length ? " …" : "") + "</div>";
+          }
+        }
         var errs = (r.data.results || []).filter(function (x) { return x.error; }).slice(0, 5);
         if (errs.length) {
           html += "<ul>" + errs.map(function (x) {
-            return "<li>" + esc(x.order || x.marketplaceOrderId || "row") + ": " + esc(x.error) + "</li>";
+            var fixBtn = x.unmappedSku
+              ? " <button type='button' class='bm-mini' data-map-sku='" + esc(x.unmappedSku) + "' data-account-id='" + accountId + "'>Map SKU</button>"
+              : "";
+            return "<li>" + esc(x.order || x.marketplaceOrderId || "row") + ": " + esc(x.error) + fixBtn + "</li>";
           }).join("") + "</ul>";
         }
         // Orders with no recorded stock still import (never blocked on a
@@ -214,6 +234,85 @@
     box.className = "result " + kind;
     box.innerHTML = html;
     box.hidden = false;
+  }
+
+  // ---------- fix-it: map an unmapped marketplace SKU straight from the
+  // failed-import list, instead of sending the user hunting for a separate
+  // SKU-mapping screen. Once mapped, re-uploading the SAME csv is always
+  // safe (ingestion is idempotent on marketplaceOrderId — the rows that
+  // already imported come back as duplicates and just get their status
+  // refreshed, per the duplicate messaging above). ----------
+  $("#upload-result").addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest("[data-map-sku]");
+    if (!btn) return;
+    openMapSkuModal(btn.getAttribute("data-map-sku"), Number(btn.getAttribute("data-account-id")));
+  });
+
+  function openMapSkuModal(marketplaceSku, accountId) {
+    var acct = ((summary && summary.accounts) || []).filter(function (a) { return a.id === accountId; })[0];
+    if (!acct || !acct.brandId) { alert("Could not find the brand for this seller account."); return; }
+
+    var m = window.NcrModal.open({
+      title: "Map “" + marketplaceSku + "”",
+      bodyHtml:
+        "<p style='margin:0 0 10px;font-size:13px;color:var(--muted)'>This marketplace SKU has no internal SKU mapping for <b>" +
+          esc(acct.sellerAccountLabel || acct.marketplace) + "</b>, so orders using it get rejected. Pick an existing SKU below, or create a new one.</p>" +
+        "<label>Search your SKUs <input id='ms-search' type='text' placeholder='code or title…' autocomplete='off' /></label>" +
+        "<div id='ms-list' style='max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:4px;margin:8px 0'>Loading…</div>" +
+        "<div class='bm-head' style='margin-top:14px'><b>Or create a new SKU &amp; map it</b></div>" +
+        "<label>SKU code <input id='ms-new-code' type='text' value='" + esc(marketplaceSku) + "' /></label>" +
+        "<button type='button' class='btn' id='ms-new-btn' style='margin-top:8px'>Create &amp; Map</button>" +
+        "<div id='ms-result' class='result' style='margin-top:10px' hidden></div>",
+    });
+
+    function msMsg(kind, msg) {
+      var box = m.body.querySelector("#ms-result");
+      box.className = "result " + kind;
+      box.textContent = msg;
+      box.hidden = false;
+    }
+
+    var allSkus = [];
+    function renderList(filterText) {
+      var list = m.body.querySelector("#ms-list");
+      var f = (filterText || "").trim().toLowerCase();
+      var rows = !f ? allSkus : allSkus.filter(function (s) {
+        return (s.code || "").toLowerCase().indexOf(f) !== -1 || (s.productTitle || "").toLowerCase().indexOf(f) !== -1;
+      });
+      if (!rows.length) { list.innerHTML = "<span class='empty'>No matching SKU — create one below.</span>"; return; }
+      list.innerHTML = rows.slice(0, 100).map(function (s) {
+        return "<button type='button' class='bm-mini' data-sku-id='" + s.id + "' style='text-align:left;justify-content:flex-start'>" +
+          "<b>" + esc(s.code) + "</b>" + (s.productTitle ? " — " + esc(s.productTitle) : "") + (s.size ? " (" + esc(s.size) + ")" : "") +
+          "</button>";
+      }).join("");
+    }
+
+    function mapToSku(skuId) {
+      api("/skus/map", { method: "POST", body: { marketplaceAccountId: accountId, marketplaceSku: marketplaceSku, skuId: skuId } }).then(function (r) {
+        if (!r.ok) { msMsg("err", (r.data && r.data.error) || "Mapping failed."); return; }
+        msMsg("ok", "Mapped! Re-upload the same CSV — this order will go through now (already-imported rows are safely skipped as duplicates).");
+        setTimeout(function () { m.close(); }, 1600);
+      }).catch(function () { msMsg("err", "Network error — try again."); });
+    }
+
+    api("/companies/me/brands/" + acct.brandId + "/skus").then(function (r) {
+      allSkus = (r.ok && Array.isArray(r.data)) ? r.data : [];
+      renderList("");
+    });
+
+    m.body.querySelector("#ms-search").addEventListener("input", function (e2) { renderList(e2.target.value); });
+    m.body.querySelector("#ms-list").addEventListener("click", function (e2) {
+      var b = e2.target.closest && e2.target.closest("[data-sku-id]");
+      if (b) mapToSku(Number(b.getAttribute("data-sku-id")));
+    });
+    m.body.querySelector("#ms-new-btn").addEventListener("click", function () {
+      var code = m.body.querySelector("#ms-new-code").value.trim();
+      if (!code) { msMsg("err", "Enter a SKU code."); return; }
+      api("/skus", { method: "POST", body: { brandId: acct.brandId, code: code, productTitle: code } }).then(function (r) {
+        if (!r.ok) { msMsg("err", (r.data && r.data.error) || "Could not create SKU (maybe it already exists — search above)."); return; }
+        mapToSku(r.data.id);
+      }).catch(function () { msMsg("err", "Network error — try again."); });
+    });
   }
 
   // ---------- AWB / manifest upload (separate from the order-sheet upload

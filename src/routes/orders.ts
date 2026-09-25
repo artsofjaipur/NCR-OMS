@@ -56,7 +56,14 @@ ordersRouter.post("/import/:marketplace", async (req, res, next) => {
     }
 
     const normalizedOrders = parser(body.csv);
-    const results: { marketplaceOrderId: string; orderId?: number; created?: boolean; error?: string; stockWarning?: string }[] = [];
+    const results: {
+      marketplaceOrderId: string;
+      orderId?: number;
+      created?: boolean;
+      error?: string;
+      stockWarning?: string;
+      unmappedSku?: string;
+    }[] = [];
 
     for (const normalized of normalizedOrders) {
       try {
@@ -64,6 +71,15 @@ ordersRouter.post("/import/:marketplace", async (req, res, next) => {
         results.push({
           marketplaceOrderId: normalized.marketplaceOrderId,
           orderId: result.orderId,
+          // false here means "this order id was already in the system --
+          // this run only refreshed its status", i.e. a duplicate upload.
+          // Re-uploading the same export is always safe (idempotent on
+          // marketplaceAccountId + marketplaceOrderId, see ingestOrder), but
+          // that was previously invisible: every successful row counted as
+          // "imported" whether it was brand-new or already there. Surfaced
+          // explicitly now so a duplicate upload is never mistaken for a
+          // fresh batch of orders. User request: "duplicate order ka bhi
+          // pata chalna chahiye."
           created: result.created,
           // Order still imported -- this is a heads-up, not a failure. See
           // reserveStock's `strict: false`: new marketplace orders are never
@@ -76,12 +92,22 @@ ordersRouter.post("/import/:marketplace", async (req, res, next) => {
       } catch (err) {
         const message =
           err instanceof UnmappedSkuError || err instanceof InsufficientStockError ? err.message : "Ingestion failed for this order";
-        results.push({ marketplaceOrderId: normalized.marketplaceOrderId, error: message });
+        results.push({
+          marketplaceOrderId: normalized.marketplaceOrderId,
+          error: message,
+          // Structured, not just embedded in the message string, so the
+          // frontend can offer a "Map this SKU" fix-it action right next to
+          // the error instead of the user re-typing the SKU from the text.
+          unmappedSku: err instanceof UnmappedSkuError ? err.marketplaceSku : undefined,
+        });
       }
     }
 
+    const successRows = results.filter((r) => r.orderId);
     res.status(207).json({
-      imported: results.filter((r) => r.orderId).length,
+      imported: successRows.length,
+      newOrders: successRows.filter((r) => r.created).length,
+      duplicateOrders: successRows.filter((r) => !r.created).length,
       failed: results.filter((r) => r.error).length,
       stockWarnings: results.filter((r) => r.stockWarning).length,
       results,
