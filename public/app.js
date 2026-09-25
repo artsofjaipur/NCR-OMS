@@ -232,6 +232,7 @@
         var dupCount = r.data.duplicateOrders || 0;
         var failed = r.data.failed || 0;
         var stockWarnCount = r.data.stockWarnings || 0;
+        var autoMappedCount = r.data.autoMapped || 0;
         var html = "<b class='ok'>" + imported + " order" + (imported === 1 ? "" : "s") + " imported</b>" +
           (failed ? ", <b>" + failed + " failed</b>" : "") + ".";
         // "Imported" used to lump brand-new orders and already-existing ones
@@ -266,6 +267,16 @@
           html += "<div style='margin-top:8px;color:var(--orange)'>⚠ " + stockWarnCount + " order" + (stockWarnCount === 1 ? "" : "s") +
             " imported with no recorded stock for some SKU(s) — do a Stock In (Party Master page) when you can:</div>" +
             "<ul>" + warnRows.map(function (x) { return "<li>" + esc(x.marketplaceOrderId) + ": " + esc(x.stockWarning) + "</li>"; }).join("") + "</ul>";
+        }
+        // Unmapped marketplace SKUs no longer block the order at all (user's
+        // explicit choice — "bilkul auto, kabhi block hi na ho"): a close
+        // match auto-maps, anything else auto-creates a new SKU on the spot.
+        // Called out here so it stays reviewable, not a silent catalog change.
+        if (autoMappedCount) {
+          var autoRows = (r.data.results || []).filter(function (x) { return x.autoMappedSku; }).slice(0, 8);
+          html += "<div style='margin-top:8px;color:var(--gold)'>🔎 " + autoMappedCount + " order" + (autoMappedCount === 1 ? "" : "s") +
+            " had a marketplace SKU auto-resolved (no manual mapping needed) — review when you can:</div>" +
+            "<ul>" + autoRows.map(function (x) { return "<li>" + esc(x.marketplaceOrderId) + ": " + esc(x.autoMappedSku) + "</li>"; }).join("") + "</ul>";
         }
         showResult(imported > 0 ? "ok" : "err", html);
         loadOrders();

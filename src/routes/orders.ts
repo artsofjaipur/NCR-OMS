@@ -63,11 +63,12 @@ ordersRouter.post("/import/:marketplace", async (req, res, next) => {
       error?: string;
       stockWarning?: string;
       unmappedSku?: string;
+      autoMappedSku?: string;
     }[] = [];
 
     for (const normalized of normalizedOrders) {
       try {
-        const result = await ingestOrder(body.marketplaceAccountId, body.warehouseId, normalized);
+        const result = await ingestOrder(body.marketplaceAccountId, body.warehouseId, normalized, account.brandId);
         results.push({
           marketplaceOrderId: normalized.marketplaceOrderId,
           orderId: result.orderId,
@@ -88,6 +89,16 @@ ordersRouter.post("/import/:marketplace", async (req, res, next) => {
           stockWarning: result.stockWarnings?.length
             ? `Imported, but no recorded stock for: ${result.stockWarnings.join(", ")} — do a Stock In when you can`
             : undefined,
+          // User's explicit choice (asked directly): never block a bulk
+          // import on an unmapped SKU -- resolveSkuForItem (ingest.ts)
+          // auto-maps a confident match or auto-creates a new SKU on the
+          // spot instead. Surfaced as a heads-up, same spirit as
+          // stockWarning, so it's reviewable rather than silent.
+          autoMappedSku: result.autoMappedSkus?.length
+            ? result.autoMappedSkus
+                .map((a) => `${a.marketplaceSku} → ${a.skuCode}${a.skuCreated ? " (new SKU created)" : " (matched existing SKU)"}`)
+                .join("; ")
+            : undefined,
         });
       } catch (err) {
         const message =
@@ -98,6 +109,9 @@ ordersRouter.post("/import/:marketplace", async (req, res, next) => {
           // Structured, not just embedded in the message string, so the
           // frontend can offer a "Map this SKU" fix-it action right next to
           // the error instead of the user re-typing the SKU from the text.
+          // Kept as a safety net -- resolveSkuForItem no longer throws this
+          // for an ordinary unmapped SKU, only for a genuinely unexpected
+          // failure (e.g. an empty SKU string).
           unmappedSku: err instanceof UnmappedSkuError ? err.marketplaceSku : undefined,
         });
       }
@@ -110,6 +124,7 @@ ordersRouter.post("/import/:marketplace", async (req, res, next) => {
       duplicateOrders: successRows.filter((r) => !r.created).length,
       failed: results.filter((r) => r.error).length,
       stockWarnings: results.filter((r) => r.stockWarning).length,
+      autoMapped: results.filter((r) => r.autoMappedSku).length,
       results,
     });
   } catch (err) {
