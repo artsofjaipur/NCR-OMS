@@ -170,6 +170,15 @@ export function createApp(): Express {
   app.get("/team", (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "team.html"));
   });
+  // Returns Tracking: "Upcoming Returns / Pending" + "Expected vs Received"
+  // — added 2026-09-25 per user request. Safe to claim the bare path: the
+  // returns API's own GET "/" (the raw returns list) has no frontend caller
+  // today (confirmed via grep) and stays reachable at /api/returns; every
+  // page under this router only ever calls a nested path (/returns/import,
+  // /returns/scan, /returns/tracking), same pattern as /reports.
+  app.get("/returns", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "returns.html"));
+  });
 
   // API Routes
   // Fixed by Claude (Anthropic): mounted at both the bare path and the

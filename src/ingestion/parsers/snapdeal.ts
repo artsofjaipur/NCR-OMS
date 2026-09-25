@@ -39,7 +39,12 @@ export function parseSnapdealExport(csvText: string): NormalizedOrder[] {
       fulfillmentType: "SELLER_FULFILLED",
       invoiceNumber: first["INVOICENUMBER"] || null,
       invoiceDate: parseSnapdealDateTime(first["INVOICEDATE"]),
-      orderedAt: parseSnapdealDateTime(first["ORDERCREATEDDATE"])!,
+      // ORDERCREATEDDATE is the one required date on a NormalizedOrder --
+      // parseSnapdealDateTime now returns null instead of throwing for a
+      // cell it can't parse (see its own comment), so this needs its own
+      // fallback rather than a non-null assertion, or one bad cell in a
+      // huge export would still corrupt that one order's date silently.
+      orderedAt: parseSnapdealDateTime(first["ORDERCREATEDDATE"]) ?? new Date(),
       verifiedAt: parseSnapdealDateTime(first["ORDERVERIFIEDDATE"]),
       items: rows.map((r) => ({
         marketplaceLineItemId: r["SUBORDERCODE"],

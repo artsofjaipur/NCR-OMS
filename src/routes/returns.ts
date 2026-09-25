@@ -8,7 +8,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { returns, orders, orderItems, marketplaceAccounts, brands, skus, companies } from "../db/schema";
+import { returns, orders, orderItems, marketplaceAccounts, brands, skus, companies, shipments } from "../db/schema";
 import { requireAuth, requireCompanyScope, requireRole } from "../middleware/auth";
 import { requireSection, scannableCompanyIds } from "../security/permissions";
 import { HttpError } from "../middleware/errorHandler";
@@ -132,6 +132,22 @@ const DATE_KEYS = [
   "created at",
   "return creation date",
   "return request date",
+  // "Return Initiated On" -- seen on a real Snapdeal-style return export
+  // (2026-09-25) alongside "Return Delivered On" (RECEIVED_DATE_KEYS below).
+  "return initiated on",
+];
+// When the portal itself already reports a delivered/received date (common
+// for older, already-completed returns in a bulk export), the import marks
+// the return RECEIVED with that date immediately -- rather than requiring
+// every historical return to be walked through the Return Receive scan
+// again just to backfill something the source data already knows.
+const RECEIVED_DATE_KEYS = [
+  "return delivered on",
+  "return received date",
+  "return received on",
+  "delivered date",
+  "received date",
+  "delivery date",
 ];
 const CARRIER_KEYS = [
   "courier",
@@ -208,6 +224,29 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
       .where(eq(brands.companyId, companyId));
     const byOrderNo = new Map(workspace.map((w) => [w.orderNo, w]));
 
+    // Some return exports (Snapdeal's, confirmed 2026-09-25) key their
+    // "Suborder ID" column to the individual LINE ITEM, not the order --
+    // matches order_items.marketplaceLineItemId (parseSnapdealExport stores
+    // SUBORDERCODE there), never orders.marketplaceOrderId (ORDERCODE).
+    // Without this fallback every row from that export style fails to match
+    // any order at all, no matter how well the header itself is recognized.
+    const lineItemRows = await db
+      .select({
+        lineItemId: orderItems.marketplaceLineItemId,
+        orderId: orders.id,
+        orderNo: orders.marketplaceOrderId,
+        brand: brands.name,
+        mp: marketplaceAccounts.marketplace,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .where(eq(brands.companyId, companyId));
+    const byLineItemId = new Map(
+      lineItemRows.filter((r) => r.lineItemId).map((r) => [r.lineItemId as string, { orderId: r.orderId, orderNo: r.orderNo, brand: r.brand, mp: r.mp }]),
+    );
+
     const results: Array<Record<string, unknown>> = [];
     let imported = 0;
     let failed = 0;
@@ -223,10 +262,17 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
       const reason = rawReason || null;
       const dateStr = pick(rec, DATE_KEYS);
       const initiatedAt = dateStr ? new Date(dateStr) : new Date();
+      const receivedDateStr = pick(rec, RECEIVED_DATE_KEYS);
+      const receivedAt = receivedDateStr ? new Date(receivedDateStr) : null;
+      const receivedAtValid = receivedAt && !Number.isNaN(receivedAt.getTime()) ? receivedAt : null;
 
       try {
         if (!orderNo && !awb) throw new Error("Row has neither Order ID nor AWB");
-        const match = orderNo ? byOrderNo.get(orderNo) : undefined;
+        // Order-level match first (Order ID / Sub Order No columns that ARE
+        // the order's own marketplace id); line-item match second (a
+        // "Suborder ID" that's really the per-item SUBORDERCODE -- see
+        // byLineItemId above).
+        const match = orderNo ? byOrderNo.get(orderNo) ?? byLineItemId.get(orderNo) : undefined;
         if (!match) throw new Error(`Order "${orderNo || awb}" not found in this workspace — upload the order CSV first`);
 
         // Idempotent upsert: one open return per order.
@@ -258,7 +304,11 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
               .set({ status: "RTO_INITIATED" })
               .where(and(eq(orders.id, match.orderId), inArray(orders.status, ["CREATED", "READY_TO_DISPATCH", "DISPATCHED", "ON_HOLD"])));
           }
-          results.push({ row: rowNo, order: orderNo, returnId: existing.id, returnType, updated: true });
+          // The portal already reports this one delivered -- record it
+          // instead of waiting for a floor scan that may never happen for
+          // an already-old/completed return being backfilled in bulk.
+          if (receivedAtValid) await markReturnReceived(existing.id, receivedAtValid);
+          results.push({ row: rowNo, order: orderNo, returnId: existing.id, returnType, updated: true, received: Boolean(receivedAtValid) });
         } else {
           const { returnId } = await initiateReturn({
             orderId: match.orderId,
@@ -268,7 +318,8 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
             reason,
             initiatedAt: Number.isNaN(initiatedAt.getTime()) ? new Date() : initiatedAt,
           });
-          results.push({ row: rowNo, order: orderNo, returnId, returnType, created: true, brand: match.brand, marketplace: match.mp });
+          if (receivedAtValid) await markReturnReceived(returnId, receivedAtValid);
+          results.push({ row: rowNo, order: orderNo, returnId, returnType, created: true, brand: match.brand, marketplace: match.mp, received: Boolean(receivedAtValid) });
         }
         imported += 1;
       } catch (e) {
@@ -406,6 +457,67 @@ returnsRouter.get("/daily", async (req, res, next) => {
       .where(eq(brands.companyId, companyId))
       .groupBy(sql`date_trunc('day', ${returns.initiatedAt})`, brands.name, marketplaceAccounts.marketplace)
       .orderBy(sql`date_trunc('day', ${returns.initiatedAt}) desc`);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// RETURNS TRACKING — the "Upcoming Returns / Pending" + "Expected vs
+// Received" report the floor already tracks by hand (user request,
+// 2026-09-25: "return initiate hua hai to next 5 din me apne pass receive
+// ho jana chahiye, ek column Expected Return Date ka bhi banega"). One
+// endpoint carries every field either view needs; the frontend renders two
+// tabs from it rather than this needing two separate queries.
+//
+// EXPECTED_RETURN_WINDOW_DAYS is a flat 5-day rule per the user's own
+// words -- not marketplace/courier-specific. If that turns out to need to
+// vary (e.g. by courier), this is the one place to make it a lookup instead
+// of a constant.
+// ---------------------------------------------------------------------------
+
+const EXPECTED_RETURN_WINDOW_DAYS = 5;
+
+returnsRouter.get("/tracking", async (req, res, next) => {
+  try {
+    const companyId = req.session!.companyId;
+    // ?pending=1 -- only returns not yet received (the "Upcoming Returns"
+    // view); omitted -- everything, for "Expected vs Received".
+    const pendingOnly = req.query.pending === "1" || req.query.pending === "true";
+
+    const rows = await db
+      .select({
+        id: returns.id,
+        status: returns.status,
+        orderNo: orders.marketplaceOrderId,
+        brand: brands.name,
+        marketplace: marketplaceAccounts.marketplace,
+        dispatchAwb: shipments.awbNumber,
+        returnAwb: returns.reverseAwb,
+        initiatedAt: returns.initiatedAt,
+        deliveredAt: returns.deliveredAt,
+        expectedReturnDate: sql<string>`(${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days')`,
+        dueStatus: sql<string>`
+          CASE
+            WHEN ${returns.deliveredAt} IS NOT NULL
+                 AND ${returns.deliveredAt} <= (${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days')
+              THEN 'RECEIVED_ON_TIME'
+            WHEN ${returns.deliveredAt} IS NOT NULL THEN 'RECEIVED_LATE'
+            WHEN now() > (${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days') THEN 'OVERDUE'
+            ELSE 'DUE'
+          END
+        `,
+      })
+      .from(returns)
+      .innerJoin(orders, eq(orders.id, returns.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .leftJoin(shipments, eq(shipments.orderId, orders.id))
+      .where(and(eq(brands.companyId, companyId), pendingOnly ? sql`${returns.deliveredAt} IS NULL` : undefined))
+      .orderBy(desc(returns.initiatedAt))
+      .limit(1000);
+
     res.json(rows);
   } catch (err) {
     next(err);
