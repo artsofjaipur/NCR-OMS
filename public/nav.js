@@ -68,6 +68,10 @@
     { sec: "inventory", ico: "📚", label: "Inventory", href: "/reports", inPageNav: "reports", tab: "fees" },
     { sec: "reports", ico: "📊", label: "Reports", href: "/reports", inPageNav: "reports" },
     { sec: "finance", ico: "💰", label: "Finance", href: "/finance", inPageNav: "finance" },
+    // Marketplace payment/settlement-sheet reconciliation — added 2026-09-25
+    // per user request (Hinglish): upload the Flipkart/Meesho/Snapdeal
+    // payment report, auto-match against orders, full report.
+    { sec: "finance", ico: "🧮", label: "Payments", href: "/payments" },
     // Returns now points at the tracking report (Upcoming/Pending + Expected
     // vs Received), added 2026-09-25 -- actual scanning/upload actions stay
     // under Scan Station, which already has its own Return Sheet / Return

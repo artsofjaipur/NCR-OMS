@@ -73,6 +73,10 @@
     { "source": "/entry/:path*",
       "destination": "/api" },
     { "source": "/dashboard",
+      "destination": "/api" },
+    { "source": "/payments",
+      "destination": "/api" },
+    { "source": "/settlements/:path*",
       "destination": "/api" }
   ]
 }

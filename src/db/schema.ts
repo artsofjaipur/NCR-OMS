@@ -427,6 +427,106 @@ export const expenses = pgTable("expenses", {
 });
 
 // ---------------------------------------------------------------------------
+// Marketplace Settlement / Payment-sheet Imports
+// ---------------------------------------------------------------------------
+// Added by Claude (Anthropic) 2026-09-25, per user request (Hinglish): upload
+// a marketplace payment/settlement report (Flipkart, Meesho, Snapdeal — each
+// a multi-tab .xlsx with a completely different layout) and have it
+// auto-reconcile against orders, with every fee/deduction visible against the
+// order it belongs to, plus a full report. Deliberately additive/generic
+// rather than a bespoke table per marketplace: `settlementEntries` stores one
+// row per source spreadsheet row (across every recognized tab), tagged by
+// `lineType` (which tab it came from) and carrying the FULL original row in
+// `raw` jsonb — so nothing from the sheet is silently dropped even where a
+// column doesn't map to a typed field, and the order-detail drill-down can
+// render "everything" for an order without a bespoke UI per fee column.
+// See BRAIN.md pt.11 for the full design writeup and disclosed assumptions.
+
+export const settlementLineTypeEnum = pgEnum("settlement_line_type", [
+  "ORDER_PAYMENT", // per-order/line-item settlement (Flipkart "Orders", Meesho "Order Payments", Snapdeal "Total_Suborders")
+  "RETURN", // Snapdeal "Returns" — reversal of an earlier order-level settlement
+  "FEE_REBATE", // Flipkart "MP Fee Rebate"
+  "NON_ORDER_CLAIM", // Flipkart "Non_Order_SPF" (lost/damaged-in-warehouse claims), not tied to a live order
+  "STORAGE_RECALL", // Flipkart "Storage_Recall"
+  "ADS", // Flipkart "Ads", Meesho "Ads Cost"
+  "TDS", // Flipkart "TDS", embedded per-row in Snapdeal/Meesho order sheets too
+  "TCS", // Flipkart "TCS_Recovery", Snapdeal "TCS"
+  "GST_DETAIL", // Flipkart "GST_Details" — fee-level GST breakdown, informational only (do not sum into bank totals: it re-explains fees already counted in ORDER_PAYMENT/ADS/etc, see settlements module comment)
+  "COMMISSION_FEES", // Snapdeal "Commission and other charges"
+  "NON_ORDER_TXN", // Snapdeal "Non Order Transactions"
+  "CLOSING_BALANCE", // Snapdeal "ClosingBalance"
+  "REFERRAL", // Meesho "Referral Payments"
+  "COMPENSATION_RECOVERY", // Meesho "Compensation and Recovery"
+  "BANK_PAYMENT", // Snapdeal "Payments" — the literal bank-credit record (UTR-keyed)
+]);
+
+export const settlementImports = pgTable("settlement_imports", {
+  id: serial("id").primaryKey(),
+  marketplaceAccountId: integer("marketplace_account_id").notNull().references(() => marketplaceAccounts.id),
+  marketplace: marketplaceEnum("marketplace").notNull(),
+  sourceFileName: varchar("source_file_name", { length: 300 }).notNull(),
+  periodStart: timestamp("period_start", { withTimezone: true }),
+  periodEnd: timestamp("period_end", { withTimezone: true }),
+  entryCount: integer("entry_count").notNull().default(0),
+  matchedCount: integer("matched_count").notNull().default(0),
+  unmatchedCount: integer("unmatched_count").notNull().default(0),
+  importedByUserId: integer("imported_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const settlementEntries = pgTable(
+  "settlement_entries",
+  {
+    id: serial("id").primaryKey(),
+    settlementImportId: integer("settlement_import_id").notNull().references(() => settlementImports.id, { onDelete: "cascade" }),
+    marketplaceAccountId: integer("marketplace_account_id").notNull().references(() => marketplaceAccounts.id),
+    lineType: settlementLineTypeEnum("line_type").notNull(),
+    // Populated when this row could be matched to a live order (most
+    // ORDER_PAYMENT/RETURN/FEE_REBATE rows; occasionally a GST_Detail row).
+    // Left null for genuinely non-order rows (Ads, TDS-at-account-level,
+    // Storage, bank Payments, etc.) — these still count toward the report,
+    // just not toward any single order's drill-down.
+    orderId: integer("order_id").references(() => orders.id, { onDelete: "set null" }),
+    orderItemId: integer("order_item_id").references(() => orderItems.id, { onDelete: "set null" }),
+    // Raw order/sub-order id string as it appeared in the sheet, kept even
+    // when matching failed, so an unmatched row can still be shown to the
+    // user with *something* to search/recognize it by.
+    marketplaceOrderIdRaw: varchar("marketplace_order_id_raw", { length: 100 }),
+    reference: varchar("reference", { length: 150 }), // NEFT ID / UTR No / Transaction ID / Campaign ID — whichever this sheet uses
+    occurredAt: timestamp("occurred_at", { withTimezone: true }), // payment/transaction date for this row
+    // The single most representative money figure for this row (see the
+    // per-sheet column map in src/ingestion/parsers/settlements/*.ts) — sign
+    // preserved (negative = deduction). NOT safe to blindly SUM across every
+    // lineType for a "net" figure; see `countsAsBankMoney`.
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull().default("0"),
+    // True only for rows from a sheet that is itself a literal bank-credit
+    // record (Flipkart's NEFT-keyed settlement sheets, Meesho's Final
+    // Settlement Amount, Snapdeal's "Payments" UTR sheet) — the only rows
+    // safe to sum for a period's "Amount Received" total without risking
+    // double-counting money that's also explained elsewhere (e.g. GST_Detail
+    // re-states fees already inside ORDER_PAYMENT).
+    countsAsBankMoney: boolean("counts_as_bank_money").notNull().default(false),
+    raw: jsonb("raw").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orderIdx: index("settlement_entries_order_idx").on(t.orderId),
+    importIdx: index("settlement_entries_import_idx").on(t.settlementImportId),
+    typeIdx: index("settlement_entries_type_idx").on(t.lineType),
+  }),
+);
+
+export const settlementImportsRelations = relations(settlementImports, ({ many, one }) => ({
+  entries: many(settlementEntries),
+  marketplaceAccount: one(marketplaceAccounts, { fields: [settlementImports.marketplaceAccountId], references: [marketplaceAccounts.id] }),
+}));
+
+export const settlementEntriesRelations = relations(settlementEntries, ({ one }) => ({
+  import: one(settlementImports, { fields: [settlementEntries.settlementImportId], references: [settlementImports.id] }),
+  order: one(orders, { fields: [settlementEntries.orderId], references: [orders.id] }),
+}));
+
+// ---------------------------------------------------------------------------
 // Purchase Entry & Direct Stock Update, Supplier Master
 // ---------------------------------------------------------------------------
 

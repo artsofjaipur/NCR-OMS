@@ -251,10 +251,33 @@
             "<div style='grid-column:1/-1;margin-top:6px'><b style='font-size:12.5px;color:var(--muted)'>ITEMS (SKU / QTY / PRICE)</b></div>" +
             "<div id='ord-items' style='grid-column:1/-1;display:flex;flex-direction:column;gap:8px'>" + (itemsHtml || "<span class='empty'>No items on this order.</span>") + "</div>" +
             returnsHtml +
+            "<div id='ord-settlement' style='grid-column:1/-1'></div>" +
             "<div id='ord-modal-result' class='result' style='grid-column:1/-1' hidden></div>" +
             "<button type='submit' class='btn' style='grid-column:1/-1' id='ord-save-btn'>Save Changes</button>" +
           "</form>",
       });
+
+      // Payment/settlement breakdown — everything a marketplace payment-sheet
+      // import matched to this order (fees, TDS/TCS/GST, ads share, net
+      // settled amount), if any has been imported yet. Fetched separately
+      // since it's not part of GET /orders/:id's own response.
+      api("/settlements/entries?orderId=" + id).then(function (sr) {
+        if (!sr.ok || !sr.data || !sr.data.length) return;
+        var box = m.body.querySelector("#ord-settlement");
+        if (!box) return;
+        var bank = sr.data.filter(function (e) { return e.countsAsBankMoney; });
+        var net = bank.reduce(function (s, e) { return s + Number(e.amount); }, 0);
+        var rowsHtml = sr.data.map(function (e) {
+          var when = e.occurredAt ? new Date(e.occurredAt).toLocaleDateString("en-IN") : "—";
+          return "<tr><td>" + esc(e.lineType.replace(/_/g, " ")) + "</td><td>" + esc(e.reference || "—") + "</td>" +
+            "<td>" + when + "</td><td style='text-align:right'>" + Number(e.amount).toFixed(2) + "</td></tr>";
+        }).join("");
+        box.innerHTML =
+          "<div style='margin-top:6px'><b style='font-size:12.5px;color:var(--muted)'>PAYMENT / SETTLEMENT" +
+          (bank.length ? " — net " + net.toFixed(2) : "") + "</b></div>" +
+          "<div class='tablewrap' style='margin-top:6px'><table class='ftable'><thead><tr><th>Type</th><th>Reference</th><th>Date</th><th style='text-align:right'>Amount</th></tr></thead>" +
+          "<tbody>" + rowsHtml + "</tbody></table></div>";
+      }).catch(function () {});
 
       function ordMsg(kind, msg) {
         var box = m.body.querySelector("#ord-modal-result");

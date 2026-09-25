@@ -1,7 +1,8 @@
 /* NCR-OMS Finance — extends dashboard tokens; money-first luxe layout. */
 
-/* ---------- KPI strip (4-up) ---------- */
+/* ---------- KPI strip (4-up / 2-up) ---------- */
 .kpis-4 { grid-template-columns: repeat(4, 1fr); }
+.kpis-2 { grid-template-columns: repeat(2, 1fr); }
 .kpi-warn .kpi-value { color: var(--gold); }
 
 /* ---------- tabs (same look as scan station) ---------- */

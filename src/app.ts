@@ -55,6 +55,7 @@ import { reportsRouter } from "./routes/reports";
 import { entryRouter } from "./routes/entry";
 import { dashboardRouter } from "./routes/dashboard";
 import { assistantRouter } from "./routes/assistant";
+import { settlementsRouter } from "./routes/settlements";
 
 import {
   errorHandler,
@@ -68,7 +69,12 @@ export function createApp(): Express {
   app.set("trust proxy", 1);
 
   // Body Parsers
-  app.use(express.json({ limit: "10mb" }));
+  // Bumped from 10mb -> 40mb by Claude (Anthropic) 2026-09-25: settlement
+  // sheet imports (POST /settlements/import) send a base64-encoded .xlsx in
+  // the JSON body, same "read client-side, POST as JSON" convention the CSV
+  // importers already use — base64 inflates size ~33%, so a 25MB source
+  // file (the route's own hard cap) needs ~34MB of body room.
+  app.use(express.json({ limit: "40mb" }));
   app.use(express.urlencoded({ extended: true }));
 
   // Security Headers
@@ -208,6 +214,13 @@ export function createApp(): Express {
   app.get("/orders", (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "orders.html"));
   });
+  // Marketplace payment/settlement-sheet reconciliation — added 2026-09-25.
+  // Bare path is safe to claim here: settlementsRouter's own GET "/" (the
+  // import history list) has no frontend caller at the bare path — every
+  // call site uses /api/settlements/... explicitly (see public/payments.js).
+  app.get("/payments", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "payments.html"));
+  });
 
   // API Routes
   // Fixed by Claude (Anthropic): mounted at both the bare path and the
@@ -233,6 +246,7 @@ export function createApp(): Express {
     ["/entry", entryRouter],
     ["/dashboard", dashboardRouter],
     ["/assistant", assistantRouter],
+    ["/settlements", settlementsRouter],
   ];
   for (const [path, router] of routeMounts) {
     app.use(path, router);
