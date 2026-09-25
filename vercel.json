@@ -36,6 +36,8 @@
       "destination": "/api" },
     { "source": "/dispatch/:path*",
       "destination": "/api" },
+    { "source": "/returns",
+      "destination": "/api" },
     { "source": "/returns/:path*",
       "destination": "/api" },
     { "source": "/payouts/:path*",
