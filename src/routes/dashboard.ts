@@ -447,23 +447,57 @@ dashboardRouter.post("/google-sheet", requireSection("orders"), async (req, res,
       throw new HttpError(400, "Sheet me koi order row nahi mili — headers marketplace export jaise hain par rows khali hain.");
     }
 
-    // Same per-order transaction + per-order error reporting as the manual path.
-    const results: { marketplaceOrderId: string; orderId?: number; created?: boolean; error?: string }[] = [];
+    // Same per-order transaction + per-order error reporting as the manual
+    // path (POST /orders/import/:marketplace in src/routes/orders.ts) --
+    // kept in parity with it, including the duplicate-visibility,
+    // stock-warning and SKU-auto-resolve reporting added there, since this
+    // route calls the exact same ingestOrder() and gets the exact same
+    // behavior from it.
+    const results: {
+      marketplaceOrderId: string;
+      orderId?: number;
+      created?: boolean;
+      error?: string;
+      stockWarning?: string;
+      unmappedSku?: string;
+      autoMappedSku?: string;
+    }[] = [];
     for (const normalized of normalizedOrders) {
       try {
-        const result = await ingestOrder(body.marketplaceAccountId, body.warehouseId, normalized);
-        results.push({ marketplaceOrderId: normalized.marketplaceOrderId, orderId: result.orderId, created: result.created });
+        const result = await ingestOrder(body.marketplaceAccountId, body.warehouseId, normalized, account.brandId);
+        results.push({
+          marketplaceOrderId: normalized.marketplaceOrderId,
+          orderId: result.orderId,
+          created: result.created,
+          stockWarning: result.stockWarnings?.length
+            ? `Imported, but no recorded stock for: ${result.stockWarnings.join(", ")} — do a Stock In when you can`
+            : undefined,
+          autoMappedSku: result.autoMappedSkus?.length
+            ? result.autoMappedSkus
+                .map((a) => `${a.marketplaceSku} → ${a.skuCode}${a.skuCreated ? " (new SKU created)" : " (matched existing SKU)"}`)
+                .join("; ")
+            : undefined,
+        });
       } catch (err) {
         const message =
           err instanceof UnmappedSkuError || err instanceof InsufficientStockError ? err.message : "Ingestion failed for this order";
-        results.push({ marketplaceOrderId: normalized.marketplaceOrderId, error: message });
+        results.push({
+          marketplaceOrderId: normalized.marketplaceOrderId,
+          error: message,
+          unmappedSku: err instanceof UnmappedSkuError ? err.marketplaceSku : undefined,
+        });
       }
     }
 
+    const successRows = results.filter((r) => r.orderId);
     res.status(207).json({
       marketplace,
-      imported: results.filter((r) => r.orderId).length,
+      imported: successRows.length,
+      newOrders: successRows.filter((r) => r.created).length,
+      duplicateOrders: successRows.filter((r) => !r.created).length,
       failed: results.filter((r) => r.error).length,
+      stockWarnings: results.filter((r) => r.stockWarning).length,
+      autoMapped: results.filter((r) => r.autoMappedSku).length,
       results,
       source: fetchedBy,
     });
