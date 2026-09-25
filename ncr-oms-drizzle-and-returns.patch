@@ -1,0 +1,332 @@
+diff --git a/BRAIN.md b/BRAIN.md
+index ec81ea7..e31a638 100644
+--- a/BRAIN.md
++++ b/BRAIN.md
+@@ -20,6 +20,21 @@
+ 
+ ## 2. Change Log (most recent first)
+ 
++### [2026-09-11] — Fix: `drizzle-kit` version mismatch + Return-sheet: RTO/customer-return classification, expanded Flipkart/Meesho header matching — **by Claude (Anthropic), delivered as a patch (no push access to this repo/account from this session)**
++- **User request:** fix the `drizzle-kit`/`drizzle-orm` version mismatch flagged in review, and improve the return-sheet CSV mapping so it isn't Snapdeal-only (Known Open Issue #2).
++- **`drizzle-kit` version fix:** `package.json` devDependency was `^0.18.1`, badly behind `drizzle-orm@^0.45.2` (a 0.45-series orm generally expects a 0.3x-series kit — the two had drifted independently). Bumped to `^0.31.10` (current latest, matches the orm generation this project is actually on). Verified: `npm install` clean, `npx tsc --noEmit` clean, `npx drizzle-kit generate` runs correctly against the current schema.
++- **⚠️ Found while verifying the drizzle-kit fix — separate, pre-existing issue, not caused by this pass:** `drizzle/meta/*_snapshot.json` is out of sync with the live schema. Running `drizzle-kit generate` right now re-proposes `companies`/`bank_accounts` columns from `0003_company_setup.sql` and the `users.permissions` column, because those were applied straight to Supabase via hand-written SQL / `drizzle-kit push` without ever running `drizzle-kit generate` to record them in the meta snapshots (see the "NOTE" in the 2026-09-10 entry above, and the 2026-09-09 permissions entry). **Do not run plain `drizzle-kit generate` in this repo until the snapshots are resynced** — it will produce a migration file full of already-applied columns. `drizzle-kit push` (used by the CI-style tests and the documented deploy flow) is unaffected, since it diffs schema.ts directly against the live DB, not against these snapshots. Fixing the snapshot drift itself needs a live DB connection this session doesn't have (`gdpfhkjdqlsjoynfunnn` is on a different Supabase account) — left as an open item, see § 3.
++- **Return-sheet mapping (`src/routes/returns.ts`):** the existing flexible header-matcher was real but under-covered and silently dropped the reason/type text it did parse. Changes:
++  - `ORDER_KEYS`/`AWB_KEYS`/`DATE_KEYS`/`CARRIER_KEYS` expanded with additional Flipkart/Meesho seller-panel column spellings (e.g. `sub order id`/`suborder id`, `reverse shipment tracking id`, `awb no`, `courier partner`, `return request date`).
++  - **New:** `TYPE_KEYS` reads an explicit "Return Type" column when the sheet has one (Flipkart/Meesho both use this for Customer Return vs RTO); `REASON_KEYS` (renamed/expanded from the old `STATUS_KEYS`) reads the freeform reason text.
++  - **New:** `classifyReturnType()` — best-effort RTO vs CUSTOMER_RETURN classification: prefers the explicit type column, falls back to keyword-matching the reason text (`rto`/`undelivered`/`unreachable` → RTO; `return`/`size issue`/`damaged`/`defective` → CUSTOMER_RETURN), returns `null` rather than guessing when neither source gives a signal.
++  - **Schema (`src/db/schema.ts`):** `returns` gained `return_type` (varchar 40, nullable) and `reason` (text, nullable) — previously parsed from the CSV but never persisted anywhere. Migration: `drizzle/0004_return_type_reason.sql` (pure additive `ALTER TABLE ADD COLUMN`, hand-written in the same style as `0003_company_setup.sql` given the snapshot-drift issue above — **not** run through `drizzle-kit generate`).
++  - **`src/modules/returns/returns.ts`:** `initiateReturn()` now accepts and persists `returnType`/`reason`. Both the create and the idempotent-update path in the import route now set these.
++  - `GET /returns` now returns `returnType` and `reason` per row (previously omitted).
++- **⚠️ Still not verified against a real Flipkart or Meesho return-report CSV** — this session doesn't have one (only the order-export CSVs from the original upload). The header list and classifier are extended based on the known public seller-panel column layouts, same caveat as the pre-existing Snapdeal-only coverage. **Recommended next step: export one real return/RTO report from Flipkart and one from Meesho and run them through `/returns/import` on a preview/test workspace** — if any header or reason phrasing doesn't match, it's a one-line addition to `ORDER_KEYS`/`AWB_KEYS`/`REASON_KEYS`/`TYPE_KEYS`/`classifyReturnType()`, not a rewrite.
++- **Verification:** `npx tsc -p tsconfig.json --noEmit` → 0 errors. `npx vitest run tests/ingestion.test.ts tests/security.test.ts` → 18/18 pass (the three DB-backed suites weren't run — no `DATABASE_URL` in this sandbox, same documented gap as every other entry in this log). **Not yet run against a live DB or redeployed** — delivered as `ncr-oms-drizzle-and-returns.patch` for the project owner to apply (`git apply <patch>`), since this session has no push access to `artsofjaipur/NCR-OMS` (different account than this session's connected GitHub). After applying: run `npx drizzle-kit push` (not `generate`, per the snapshot-drift note above) against the real Supabase DB to add the two new `returns` columns, then redeploy.
++- **Files:** `package.json`, `src/db/schema.ts`, `src/modules/returns/returns.ts`, `src/routes/returns.ts`, `drizzle/0004_return_type_reason.sql` (new), `BRAIN.md`.
++
+ ### [2026-09-09] — Left sidebar navigation + Virtual Assistant (alerts + Hinglish Q&A) — **by Buffy (Codebuff)**
+ - **User request:** left menu bar with all masters (orders, returns, finance, company setup, party master…), profile-based visibility, aur ek virtual assistant jo OMS ke saath "flart" (alert) karta rahe.
+ - **Sidebar (`public/nav.css` + `public/nav.js`, injected on /app, /finance, /reports, /scan):**
+@@ -214,11 +229,12 @@
+ These are pre-existing, documented limitations of the codebase itself, not bugs introduced by any tooling:
+ 
+ 1. **Amazon connector unimplemented** — `src/connectors/amazon.ts` throws `NotImplementedError` per method by design; no live-API ingestion path yet. Only CSV import works today.
+-2. **Return/RTO field mapping** only verified against Snapdeal's export; no Flipkart/Meesho return-report samples yet.
++2. **Return/RTO field mapping** — **IMPROVED 2026-09-11** (see Change Log): header matching + RTO/customer-return classification extended for Flipkart/Meesho based on their known seller-panel column layouts, and the parsed reason/type is now actually persisted (`returns.return_type`/`returns.reason`, previously discarded). **Still not confirmed against a real Flipkart or Meesho return-report CSV** — only Snapdeal has been verified live. Keep this open until one real sample of each has been run through `/returns/import`.
+ 3. **Meesho "Ready to Ship" export has no AWB or address** — Daily Dispatch can't complete Meesho handoff until a Meesho label/manifest export exists to parse.
+-4. **No UI** — API layer only, by design.
+-5. **Deploy path unverified end-to-end** — build/tests pass locally against local Postgres; a real Supabase+Vercel deploy has not been exercised with live credentials.
++4. ~~No UI — API layer only, by design.~~ — **STALE**, superseded by the 2026-09-09/10 frontend work (dashboard, finance, scan station, reports, company profile all shipped). Left here only so nobody re-reads this as current; delete on the next full BRAIN.md tidy-up.
++5. ~~Deploy path unverified end-to-end...~~ — **STALE**, superseded by the 2026-09-07/08 entries confirming `ncr-oms.vercel.app` live in production.
+ 6. ~~`vercel.json` rewrites every path...~~ — **FIXED 2026-09-08**, see Change Log below and `BUGRESOLVE.md` Bug #4.
++7. **`drizzle/meta/*_snapshot.json` drift** — see the 2026-09-11 Change Log entry. `drizzle-kit generate` is unsafe to run until the snapshots are resynced against the real live schema (needs a live DB connection); `drizzle-kit push` is unaffected.
+ 
+ ---
+ 
+diff --git a/BUGRESOLVE.md b/BUGRESOLVE.md
+index c505893..19953bf 100644
+--- a/BUGRESOLVE.md
++++ b/BUGRESOLVE.md
+@@ -187,6 +187,40 @@ Every router in `src/app.ts` is now mounted at **both** its bare path (`/orders`
+ 
+ ---
+ 
++## Bug #5 — `drizzle-kit` devDependency badly out of date vs `drizzle-orm`
++
++- **Status:** ✅ RESOLVED
++- **Date resolved:** 2026-09-11
++- **Fixed by:** Claude (Anthropic)
++- **Severity:** P2 — not yet causing a live failure, but a latent risk: `drizzle-kit@^0.18.1` alongside `drizzle-orm@^0.45.2` is a large generation gap between the CLI and the ORM it drives, which tends to surface as confusing/incorrect diffs or outright incompatibility in `drizzle-kit generate`/`push`/`studio` rather than a clean error pointing at the real cause.
++
++### Symptom
++No live crash yet — found during a version audit. `package.json` had `drizzle-orm: ^0.45.2` (upgraded in an earlier pass, per an intentionally-fixed SQL-injection CVE) but `drizzle-kit` was left at `^0.18.1`, a version predating that orm series.
++
++### Root Cause
++The two packages were upgraded independently at different times without re-checking that they're still a matched pair — `drizzle-kit`'s CLI behavior (schema introspection, migration generation) is versioned against specific `drizzle-orm` internals, so a large gap between them is a real (if latent) compatibility risk, not just a cosmetic mismatch.
++
++### Fix
++Bumped `drizzle-kit` to `^0.31.10` (current latest as of this fix, confirmed via `npm view drizzle-kit version`).
++
++### Files Changed
++- `package.json`
++
++### Verification
++```
++$ npm install
++added 179 packages
++
++$ npx tsc -p tsconfig.json --noEmit
++# 0 errors
++
++$ npx drizzle-kit generate --config=drizzle.config.ts
++25 tables ... [✓] Your SQL migration file ➜ ...
++```
++`drizzle-kit generate` itself now runs cleanly end-to-end (previously untested against this version pairing). **Note:** the generated migration also surfaced a separate, pre-existing issue — the `drizzle/meta` snapshots are out of sync with the live schema (columns applied via hand-written SQL / `drizzle-kit push` were never captured by `drizzle-kit generate`). That drift is not part of this bug; it's tracked as Known Open Issue #7 in `BRAIN.md`.
++
++---
++
+ ## How to Add a New Entry
+ 
+ When you fix a real bug in this repo:
+diff --git a/drizzle/0004_return_type_reason.sql b/drizzle/0004_return_type_reason.sql
+new file mode 100644
+index 0000000..82f5921
+--- /dev/null
++++ b/drizzle/0004_return_type_reason.sql
+@@ -0,0 +1,8 @@
++-- Return classification fields (2026-09-11, by Claude for Ram):
++-- returnType captures the marketplace's RTO-vs-customer-return split (from
++-- the return sheet's "Return Type" column when present, or a best-effort
++-- keyword classification of the reason text otherwise); reason stores the
++-- marketplace's freeform return/RTO reason text. Both nullable and additive
++-- — existing rows are unaffected, no backfill needed.
++ALTER TABLE "returns" ADD COLUMN "return_type" varchar(40);
++ALTER TABLE "returns" ADD COLUMN "reason" text;
+diff --git a/package.json b/package.json
+index 71baf65..ce6ff6d 100644
+--- a/package.json
++++ b/package.json
+@@ -36,7 +36,7 @@
+     "@types/jsonwebtoken": "^9.0.7",
+     "@types/node": "^22.10.1",
+     "@types/pg": "^8.11.10",
+-    "drizzle-kit": "^0.18.1",
++    "drizzle-kit": "^0.31.10",
+     "tsx": "^4.19.2",
+     "typescript": "^5.7.2",
+     "vitest": "^5.0.0"
+diff --git a/src/db/schema.ts b/src/db/schema.ts
+index 448090d..66ba805 100644
+--- a/src/db/schema.ts
++++ b/src/db/schema.ts
+@@ -360,6 +360,17 @@ export const returns = pgTable("returns", {
+   orderId: integer("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+   orderItemId: integer("order_item_id").references(() => orderItems.id),
+   status: returnStatusEnum("status").notNull().default("INITIATED"),
++  // Marketplace-reported classification, captured from the return-sheet CSV
++  // (e.g. Flipkart/Meesho "Return Type" column: "Customer Return" vs "RTO" —
++  // an RTO never left the customer's hands and should never be QC'd for
++  // damage the same way a worn/returned customer item would be). Free-text
++  // because marketplaces don't share a fixed vocabulary; NULL when the sheet
++  // didn't carry a recognizable value.
++  returnType: varchar("return_type", { length: 40 }),
++  // The marketplace's own return/RTO reason text (e.g. "Size issue", "Order
++  // cancelled by buyer", "Undelivered — customer unreachable"). Distinct from
++  // qcNotes, which is our own warehouse QC finding recorded later.
++  reason: text("reason"),
+   reverseAwb: varchar("reverse_awb", { length: 100 }),
+   reverseCarrier: varchar("reverse_carrier", { length: 100 }),
+   initiatedAt: timestamp("initiated_at", { withTimezone: true }),
+diff --git a/src/modules/returns/returns.ts b/src/modules/returns/returns.ts
+index 36c4659..fed09bb 100644
+--- a/src/modules/returns/returns.ts
++++ b/src/modules/returns/returns.ts
+@@ -9,6 +9,8 @@ export async function initiateReturn(params: {
+   orderItemId?: number | null;
+   reverseAwb?: string | null;
+   reverseCarrier?: string | null;
++  returnType?: string | null;
++  reason?: string | null;
+   initiatedAt: Date;
+ }): Promise<{ returnId: number }> {
+   const [row] = await db
+@@ -19,6 +21,8 @@ export async function initiateReturn(params: {
+       status: "INITIATED",
+       reverseAwb: params.reverseAwb ?? null,
+       reverseCarrier: params.reverseCarrier ?? null,
++      returnType: params.returnType ?? null,
++      reason: params.reason ?? null,
+       initiatedAt: params.initiatedAt,
+     })
+     .returning({ id: returns.id });
+diff --git a/src/routes/returns.ts b/src/routes/returns.ts
+index 4d2e3b7..09db630 100644
+--- a/src/routes/returns.ts
++++ b/src/routes/returns.ts
+@@ -1,3 +1,9 @@
++/**
++ * Return sheet import + return lifecycle endpoints.
++ * Return-type/reason capture + expanded Flipkart/Meesho header matching
++ * added by Claude (Anthropic) — see BRAIN.md 2026-09-11 entry and Known
++ * Open Issue #2 (RTO/return field mapping was Snapdeal-only before this).
++ */
+ import { Router } from "express";
+ import { z } from "zod";
+ import { and, desc, eq, inArray, sql } from "drizzle-orm";
+@@ -75,12 +81,78 @@ const importSchema = z.object({
+   csv: z.string().min(5).max(5_000_000),
+ });
+ 
+-// Header spellings seen across marketplace return reports.
+-const ORDER_KEYS = ["order id", "order no", "order number", "orderid", "sub order no", "suborder no", "order_item_id", "order item id"];
+-const AWB_KEYS = ["awb", "awb number", "reverse awb", "reverse awb number", "tracking id", "awbno"];
+-const DATE_KEYS = ["return date", "date", "initiated date", "return initiated date", "rma date", "created at"];
+-const CARRIER_KEYS = ["courier", "carrier", "reverse courier", "courier name", "logistics partner"];
+-const STATUS_KEYS = ["return status", "status", "reason"];
++// Header spellings seen across marketplace return reports. Verified live
++// against a real Snapdeal return sheet; Flipkart and Meesho variants below
++// are best-effort from their published seller-panel report layouts and have
++// NOT yet been run against a real Flipkart/Meesho return-report CSV — if a
++// real one turns up a header this list misses, add it here rather than
++// touching the matching logic, so the fix stays a one-line addition.
++const ORDER_KEYS = [
++  "order id",
++  "order no",
++  "order number",
++  "orderid",
++  "sub order no",
++  "suborder no",
++  "sub order id",
++  "suborder id",
++  "order_item_id",
++  "order item id",
++  "orderitemid",
++];
++const AWB_KEYS = [
++  "awb",
++  "awb number",
++  "awb no",
++  "awbno",
++  "reverse awb",
++  "reverse awb number",
++  "reverse awb no",
++  "reverse shipment tracking id",
++  "reverse tracking id",
++  "return awb",
++  "return awb number",
++  "tracking id",
++  "tracking number",
++];
++const DATE_KEYS = [
++  "return date",
++  "date",
++  "initiated date",
++  "return initiated date",
++  "return init date",
++  "rma date",
++  "created at",
++  "return creation date",
++  "return request date",
++];
++const CARRIER_KEYS = [
++  "courier",
++  "carrier",
++  "reverse courier",
++  "reverse carrier",
++  "courier name",
++  "courier partner",
++  "logistics partner",
++  "shipping partner",
++];
++// The freeform explanation text a marketplace attaches to a return (e.g.
++// "Size issue", "Order cancelled by buyer", "Undelivered — unreachable").
++// Distinct from returnType (below), which is the RTO-vs-customer-return
++// classification.
++const REASON_KEYS = [
++  "return status",
++  "status",
++  "reason",
++  "return reason",
++  "return sub reason",
++  "rto reason",
++  "cancellation reason",
++];
++// An explicit classification column, when the marketplace provides one —
++// Flipkart and Meesho both label this "Return Type" with values like
++// "Customer Return" / "RTO" / "Buyer Return" in their seller-panel exports.
++const TYPE_KEYS = ["return type", "returntype", "type", "return category"];
+ 
+ function pick(rec: Record<string, string>, keys: string[]): string {
+   for (const k of keys) {
+@@ -90,6 +162,28 @@ function pick(rec: Record<string, string>, keys: string[]): string {
+   return "";
+ }
+ 
++/**
++ * Best-effort RTO vs customer-return classification. Prefers an explicit
++ * "Return Type" column; falls back to keyword-matching the reason text when
++ * the sheet doesn't carry one. Returns null (never guesses) when neither
++ * source gives a usable signal — an unclassified return is still imported,
++ * just without this label.
++ */
++function classifyReturnType(explicitType: string, reasonText: string): string | null {
++  const norm = (s: string) => s.trim().toLowerCase();
++  const t = norm(explicitType);
++  if (t) {
++    if (/\brto\b|return.?to.?origin/.test(t)) return "RTO";
++    if (/customer|buyer/.test(t)) return "CUSTOMER_RETURN";
++    return explicitType.trim().slice(0, 40); // pass through whatever the sheet said, capped to column width
++  }
++  const r = norm(reasonText);
++  if (!r) return null;
++  if (/\brto\b|undeliver|unreachable|refused|cancel(l)?ed by buyer|address issue/.test(r)) return "RTO";
++  if (/return|exchange|size issue|quality issue|damaged|defective|wrong (item|product)/.test(r)) return "CUSTOMER_RETURN";
++  return null;
++}
++
+ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, res, next) => {
+   try {
+     const body = importSchema.parse(req.body);
+@@ -116,7 +210,10 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req,
+       const orderNo = pick(rec, ORDER_KEYS).replace(/^'/, "");
+       const awb = pick(rec, AWB_KEYS) || null;
+       const carrier = pick(rec, CARRIER_KEYS) || null;
+-      const rawStatus = pick(rec, STATUS_KEYS);
++      const rawReason = pick(rec, REASON_KEYS);
++      const rawType = pick(rec, TYPE_KEYS);
++      const returnType = classifyReturnType(rawType, rawReason);
++      const reason = rawReason || null;
+       const dateStr = pick(rec, DATE_KEYS);
+       const initiatedAt = dateStr ? new Date(dateStr) : new Date();
+ 
+@@ -138,18 +235,22 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req,
+             .set({
+               reverseAwb: awb ?? undefined,
+               reverseCarrier: carrier ?? undefined,
++              returnType: returnType ?? undefined,
++              reason: reason ?? undefined,
+               initiatedAt: Number.isNaN(initiatedAt.getTime()) ? undefined : initiatedAt,
+             })
+             .where(eq(returns.id, existing.id));
+-          results.push({ row: rowNo, order: orderNo, returnId: existing.id, updated: true });
++          results.push({ row: rowNo, order: orderNo, returnId: existing.id, returnType, updated: true });
+         } else {
+           const { returnId } = await initiateReturn({
+             orderId: match.orderId,
+             reverseAwb: awb ?? undefined,
+             reverseCarrier: carrier ?? undefined,
++            returnType,
++            reason,
+             initiatedAt: Number.isNaN(initiatedAt.getTime()) ? new Date() : initiatedAt,
+           });
+-          results.push({ row: rowNo, order: orderNo, returnId, created: true, brand: match.brand, marketplace: match.mp });
++          results.push({ row: rowNo, order: orderNo, returnId, returnType, created: true, brand: match.brand, marketplace: match.mp });
+         }
+         imported += 1;
+       } catch (e) {
+@@ -235,6 +336,8 @@ returnsRouter.get("/", async (req, res, next) => {
+       .select({
+         id: returns.id,
+         status: returns.status,
++        returnType: returns.returnType,
++        reason: returns.reason,
+         reverseAwb: returns.reverseAwb,
+         reverseCarrier: returns.reverseCarrier,
+         initiatedAt: returns.initiatedAt,
