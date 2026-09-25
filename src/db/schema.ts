@@ -562,6 +562,22 @@ export const purchaseEntries = pgTable("purchase_entries", {
   totalAmount: numeric("total_amount", { precision: 12, scale: 2 }),
   dueDate: timestamp("due_date", { withTimezone: true }),
   notes: text("notes"),
+  // Stock-In ledger fields — added 2026-09-25 per user request to track
+  // party-wise "Stock In" sheets (challan-wise goods receipt, GST, bill and
+  // payment tracking) as full CRUD entries, not just a fire-and-forget
+  // receipt. `entryDate` is the real-world date goods came in (what the
+  // party's sheet calls "In Date") — kept separate from `createdAt` (system
+  // insert time) since historical sheets are imported long after the fact
+  // and every date/balance/report must be computed off the real date.
+  entryDate: timestamp("entry_date", { withTimezone: true }),
+  partyChalanNo: varchar("party_chalan_no", { length: 100 }),
+  ourChalanNo: varchar("our_chalan_no", { length: 100 }),
+  gstPercent: numeric("gst_percent", { precision: 5, scale: 2 }),
+  // subtotal = qty*rate (pre-GST); totalAmount above stays the final payable
+  // (subtotal + gst) so existing Finance/Reports/Assistant queries that sum
+  // totalAmount as "what's owed" keep working unchanged.
+  subtotalAmount: numeric("subtotal_amount", { precision: 12, scale: 2 }),
+  gstAmount: numeric("gst_amount", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

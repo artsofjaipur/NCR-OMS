@@ -56,6 +56,7 @@ import { entryRouter } from "./routes/entry";
 import { dashboardRouter } from "./routes/dashboard";
 import { assistantRouter } from "./routes/assistant";
 import { settlementsRouter } from "./routes/settlements";
+import { inventoryRouter } from "./routes/inventory";
 
 import {
   errorHandler,
@@ -221,6 +222,13 @@ export function createApp(): Express {
   app.get("/payments", (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "payments.html"));
   });
+  // Inventory / Stock report (SKU × size × product) — added 2026-09-25 per
+  // user request. Bare path is safe to claim: inventoryRouter's own data
+  // endpoints live under /inventory/stock and /inventory/stock/summary, not
+  // the bare path, so there's no collision (same pattern as /payments).
+  app.get("/inventory", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "inventory.html"));
+  });
 
   // API Routes
   // Fixed by Claude (Anthropic): mounted at both the bare path and the
@@ -247,6 +255,7 @@ export function createApp(): Express {
     ["/dashboard", dashboardRouter],
     ["/assistant", assistantRouter],
     ["/settlements", settlementsRouter],
+    ["/inventory", inventoryRouter],
   ];
   for (const [path, router] of routeMounts) {
     app.use(path, router);
