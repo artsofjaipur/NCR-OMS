@@ -160,6 +160,7 @@
 
   // ---------- state ----------
   var summary = null;
+  var dailySummary = null;
   var selectedFile = null;
 
   // ---------- file input + drag & drop ----------
@@ -486,6 +487,11 @@
       renderAccounts();
       renderWarehouses();
       renderTrend();
+      // Daily Summary panel has its own endpoint (different aggregation
+      // shape) but should refresh whenever the KPI strip does — every
+      // existing loadSummary() call site (order save/cancel/delete, CSV
+      // import, boot) picks this up for free this way.
+      loadDailySummary();
       // Fix (#9): /orders and /dashboard/summary load in parallel, and
       // renderOrdersTable()'s accountLabel() needs summary.accounts. If
       // /orders resolved first, its render ran with summary still null and
@@ -568,6 +574,178 @@
     }, 0);
     $("#trend-foot").innerHTML = "<b>" + num(total14) + "</b> orders in 14 days &middot; <b>" + money(rev14) + "</b> revenue";
   }
+
+  // ---------- Daily Summary dashboard (OVERALL TOTALS / PLATFORM-WISE
+  // BREAKDOWN / DAILY SUMMARY, every number clickable) — added by Claude
+  // (Anthropic) 2026-09-25 per user's dashboard spec. Backed by
+  // GET /dashboard/daily-summary and GET /dashboard/daily-summary/detail
+  // (src/routes/dashboard.ts). See that file's own comment for exactly how
+  // "Orders Dispatched" is defined (shipments.packedAt) — the same
+  // assumption is echoed in the panel's subtitle above the tiles. ----------
+  var DS_TILES = [
+    { key: "ordersDispatched", label: "Orders Dispatched", fmt: num },
+    { key: "dispatchAmount", label: "Dispatch Amount", fmt: money },
+    { key: "returnsExpected", label: "Returns Expected", fmt: num },
+    { key: "returnsReceived", label: "Returns Received", fmt: num },
+    { key: "returnsPending", label: "Returns Pending", fmt: num },
+    { key: "returnsDueToday", label: "Returns Due Today", fmt: num },
+    { key: "returnsOverdue", label: "Returns Overdue", fmt: num },
+  ];
+
+  var DS_RETURN_LABELS = {
+    INITIATED: "Initiated", IN_TRANSIT: "In Transit", RECEIVED: "Received",
+    QC_PASSED: "QC Passed", QC_FAILED: "QC Failed", RESTOCKED: "Restocked", CLOSED: "Closed",
+  };
+  var DS_DUE_LABELS = { DUE: "Due", OVERDUE: "Overdue", RECEIVED_ON_TIME: "Received — on time", RECEIVED_LATE: "Received — late" };
+
+  function dsFmtDate(v) {
+    if (!v) return "—";
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  }
+
+  function loadDailySummary() {
+    api("/dashboard/daily-summary?days=30").then(function (r) {
+      if (!r.ok || !r.data) return;
+      dailySummary = r.data;
+      renderDsTotals();
+      renderDsPlatform();
+      renderDsDaily();
+    });
+  }
+
+  function renderDsTotals() {
+    var t = (dailySummary && dailySummary.totals) || {};
+    $("#ds-totals").innerHTML = DS_TILES.map(function (tile) {
+      var val = t[tile.key];
+      var hasData = val != null && Number(val) > 0;
+      return "<div class='ds-tile'>" +
+        "<div class='ds-tile-label'>" + esc(tile.label) + "</div>" +
+        "<button type='button' class='ds-tile-btn' data-metric='" + tile.key + "'" + (hasData ? "" : " disabled") + ">" +
+          tile.fmt(val) +
+        "</button>" +
+        "</div>";
+    }).join("");
+  }
+
+  function renderDsPlatform() {
+    var rows = (dailySummary && dailySummary.byPlatform) || [];
+    var tb = $("#ds-platform-table tbody");
+    $("#ds-platform-empty").hidden = rows.length > 0;
+    tb.innerHTML = rows.map(function (row) {
+      return "<tr>" +
+        "<td><b>" + esc(row.marketplace) + "</b></td>" +
+        "<td>" + dsLinkCell(row.ordersDispatched, "ordersDispatched", { platform: row.marketplace }, num) + "</td>" +
+        "<td>" + dsLinkCell(row.dispatchAmount, "dispatchAmount", { platform: row.marketplace }, money) + "</td>" +
+        "<td>" + dsLinkCell(row.returnsReceived, "returnsReceived", { platform: row.marketplace }, num) + "</td>" +
+        "</tr>";
+    }).join("");
+  }
+
+  function renderDsDaily() {
+    var rows = (dailySummary && dailySummary.byDate) || [];
+    var tb = $("#ds-daily-table tbody");
+    tb.innerHTML = rows.map(function (row) {
+      return "<tr>" +
+        "<td>" + dsFmtDate(row.date) + "</td>" +
+        "<td>" + dsLinkCell(row.ordersDispatched, "ordersDispatched", { date: row.date }, num) + "</td>" +
+        "<td>" + dsLinkCell(row.returnsExpected, "returnsExpected", { date: row.date }, num) + "</td>" +
+        "<td>" + dsLinkCell(row.returnsReceived, "returnsReceived", { date: row.date }, num) + "</td>" +
+        "</tr>";
+    }).join("");
+  }
+
+  // A table cell that's a plain number when zero, and a clickable
+  // drill-down link when not — data-* attributes carry the metric + filters
+  // for the click handler below instead of one handler per cell.
+  function dsLinkCell(val, metric, extra, fmt) {
+    var n = Number(val || 0);
+    if (!n) return "<span style='color:var(--muted)'>" + fmt(val) + "</span>";
+    var attrs = "data-metric='" + metric + "'";
+    if (extra && extra.date) attrs += " data-date='" + esc(extra.date) + "'";
+    if (extra && extra.platform) attrs += " data-platform='" + esc(extra.platform) + "'";
+    return "<button type='button' class='ds-link' " + attrs + ">" + fmt(val) + "</button>";
+  }
+
+  function dsMetricLabel(metric) {
+    var found = DS_TILES.filter(function (t) { return t.key === metric; })[0];
+    return found ? found.label : metric;
+  }
+
+  function openDailySummaryDetail(metric, filters) {
+    filters = filters || {};
+    var qs = "metric=" + encodeURIComponent(metric);
+    if (filters.date) qs += "&date=" + encodeURIComponent(filters.date);
+    if (filters.platform) qs += "&platform=" + encodeURIComponent(filters.platform);
+
+    var titleBits = [dsMetricLabel(metric)];
+    if (filters.platform) titleBits.push(filters.platform);
+    if (filters.date) titleBits.push(dsFmtDate(filters.date));
+
+    var m = window.NcrModal.open({
+      title: titleBits.join(" — "),
+      wide: true,
+      bodyHtml: "<div id='ds-detail-body' class='empty'>Loading…</div>",
+    });
+
+    api("/dashboard/daily-summary/detail?" + qs).then(function (r) {
+      var body = m.body.querySelector("#ds-detail-body");
+      if (!r.ok || !r.data || !Array.isArray(r.data.rows) || !r.data.rows.length) {
+        body.className = "empty";
+        body.textContent = "No records found.";
+        return;
+      }
+      var rows = r.data.rows;
+      if (r.data.kind === "orders") {
+        body.outerHTML =
+          "<div class='tablewrap'><table><thead><tr>" +
+            "<th>Order No</th><th>Marketplace</th><th>Brand</th><th>AWB</th><th>Status</th><th>Dispatched</th><th>Amount (₹)</th>" +
+          "</tr></thead><tbody>" +
+          rows.map(function (row) {
+            return "<tr>" +
+              "<td><b>" + esc(row.orderNo) + "</b></td>" +
+              "<td>" + esc(row.marketplace) + "</td>" +
+              "<td>" + esc(row.brand) + "</td>" +
+              "<td>" + esc(row.awbNumber || "—") + "</td>" +
+              "<td>" + esc((row.status || "").replace(/_/g, " ")) + "</td>" +
+              "<td>" + dsFmtDate(row.dispatchedAt) + "</td>" +
+              "<td>" + money(row.invoiceAmount) + "</td>" +
+              "</tr>";
+          }).join("") +
+          "</tbody></table></div>";
+      } else {
+        body.outerHTML =
+          "<div class='tablewrap'><table><thead><tr>" +
+            "<th>Order No</th><th>Marketplace</th><th>Dispatch AWB</th><th>Return AWB</th><th>Initiated</th><th>Expected By</th><th>Received</th><th>Status</th>" +
+          "</tr></thead><tbody>" +
+          rows.map(function (row) {
+            return "<tr>" +
+              "<td><b>" + esc(row.orderNo) + "</b></td>" +
+              "<td>" + esc(row.marketplace) + "</td>" +
+              "<td>" + esc(row.dispatchAwb || "—") + "</td>" +
+              "<td>" + esc(row.returnAwb || "—") + "</td>" +
+              "<td>" + dsFmtDate(row.initiatedAt) + "</td>" +
+              "<td>" + dsFmtDate(row.expectedReturnDate) + "</td>" +
+              "<td>" + dsFmtDate(row.deliveredAt) + "</td>" +
+              "<td><span class='status due-" + esc(row.dueStatus) + "'>" + esc(DS_DUE_LABELS[row.dueStatus] || row.dueStatus) + "</span></td>" +
+              "</tr>";
+          }).join("") +
+          "</tbody></table></div>";
+      }
+    });
+  }
+
+  $("#daily-summary-panel").addEventListener("click", function (e) {
+    var btn = e.target.closest(".ds-tile-btn, .ds-link");
+    if (!btn || btn.disabled) return;
+    var metric = btn.getAttribute("data-metric");
+    if (!metric) return;
+    openDailySummaryDetail(metric, {
+      date: btn.getAttribute("data-date") || undefined,
+      platform: btn.getAttribute("data-platform") || undefined,
+    });
+  });
 
   // ---------- orders (list, search, edit/delete) ----------
   var ordersPageSize = 50;

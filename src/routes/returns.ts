@@ -477,7 +477,7 @@ returnsRouter.get("/daily", async (req, res, next) => {
 // of a constant.
 // ---------------------------------------------------------------------------
 
-const EXPECTED_RETURN_WINDOW_DAYS = 5;
+export const EXPECTED_RETURN_WINDOW_DAYS = 5;
 
 returnsRouter.get("/tracking", async (req, res, next) => {
   try {

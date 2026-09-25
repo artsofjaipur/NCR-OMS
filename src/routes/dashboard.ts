@@ -2,7 +2,7 @@ import { Router } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client";
-import { brands, orders, orderItems, warehouses, marketplaceAccounts, marketplaceSkuMap, skus, returns } from "../db/schema";
+import { brands, orders, orderItems, warehouses, marketplaceAccounts, marketplaceSkuMap, skus, returns, shipments } from "../db/schema";
 import { requireAuth, requireCompanyScope } from "../middleware/auth";
 import { requireSection } from "../security/permissions";
 import { HttpError } from "../middleware/errorHandler";
@@ -11,6 +11,7 @@ import { parseMeeshoExport } from "../ingestion/parsers/meesho";
 import { parseSnapdealExport } from "../ingestion/parsers/snapdeal";
 import { ingestOrder, UnmappedSkuError } from "../modules/orders/ingest";
 import { InsufficientStockError } from "../modules/inventory/ledger";
+import { EXPECTED_RETURN_WINDOW_DAYS } from "./returns";
 
 export const dashboardRouter = Router();
 dashboardRouter.use(requireAuth, requireCompanyScope);
@@ -155,6 +156,390 @@ dashboardRouter.get("/summary", async (req, res, next) => {
     }
 
     res.json({ brands: brandRows, warehouses: warehouseRows, accounts, kpis, trend: [], byMarketplace: [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Daily Summary panel — user's spec (Hinglish, 2026-09-25), verbatim:
+//   "DASHBOARD — Daily Summary / OVERALL TOTALS (dispatched orders+amount,
+//    returns expected/received/pending, due today, overdue) /
+//    PLATFORM-WISE BREAKDOWN (platform x dispatched/amount/returns received) /
+//    DAILY SUMMARY (date x dispatched/returns expected/returns received) /
+//    order dispatch return expected returns recived link rahe click karne
+//    par pata chal jana chahiye ki aaj ye order dispatch huye unki list
+//    dikh jaye, ese hi return vali"
+// -- i.e. every count below must be clickable and open the underlying row
+// list. GET /daily-summary computes the three blocks; GET
+// /daily-summary/detail is what each click calls to fetch that list
+// (frontend: public/app.js, window.NcrModal).
+//
+// ASSUMPTION (disclosed to the user, not silently guessed): "Orders
+// Dispatched" = shipments.packed_at IS NOT NULL. Nothing in this codebase
+// auto-transitions an order to the DISPATCHED status -- that enum value is
+// only ever set by a manual PATCH edit (grep confirms no other write site),
+// same mechanism as Cancel. The Scan Station's pack-scan (packedAt) is the
+// only automatic "this order left the building" signal that exists today,
+// and it's already what the Scan Station's "scanned today" counter and the
+// Orders page's "Packed" badge use -- so this panel stays consistent with
+// what's shown everywhere else rather than inventing a second definition.
+// If a manual-only "mark Dispatched" flow should also count, this is the
+// one place to widen the condition (OR in orders.status = 'DISPATCHED').
+//
+// "Total Returns Expected" (OVERALL TOTALS) = every return ever initiated
+// (initiated_at not null), matching the "Expected vs Received" tracking
+// view's full row count. The DAILY SUMMARY table's per-day "Returns
+// Expected" is different on purpose -- it buckets by EXPECTED return date
+// (initiated_at + 5 days), i.e. "how many are due back on this date", not
+// "how many were initiated on this date".
+// ---------------------------------------------------------------------------
+
+const DAILY_SUMMARY_METRICS = [
+  "ordersDispatched",
+  "dispatchAmount",
+  "returnsExpected",
+  "returnsReceived",
+  "returnsPending",
+  "returnsDueToday",
+  "returnsOverdue",
+] as const;
+type DailySummaryMetric = (typeof DAILY_SUMMARY_METRICS)[number];
+
+const ORDER_METRICS = new Set<DailySummaryMetric>(["ordersDispatched", "dispatchAmount"]);
+
+const dailySummaryQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(180).optional(),
+});
+
+dashboardRouter.get("/daily-summary", async (req, res, next) => {
+  try {
+    const companyId = req.session!.companyId;
+    const parsedQuery = dailySummaryQuerySchema.safeParse(req.query);
+    const days = parsedQuery.success && parsedQuery.data.days ? parsedQuery.data.days : 30;
+
+    const accountRows = await db
+      .select({ id: marketplaceAccounts.id })
+      .from(marketplaceAccounts)
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .where(eq(brands.companyId, companyId));
+    const accountIds = accountRows.map((a) => a.id);
+
+    const empty = {
+      totals: {
+        ordersDispatched: 0,
+        dispatchAmount: "0",
+        returnsExpected: 0,
+        returnsReceived: 0,
+        returnsPending: 0,
+        returnsDueToday: 0,
+        returnsOverdue: 0,
+      },
+      byPlatform: [] as Array<{ marketplace: string; ordersDispatched: number; dispatchAmount: string; returnsReceived: number }>,
+      byDate: [] as Array<{ date: string; ordersDispatched: number; returnsExpected: number; returnsReceived: number }>,
+    };
+
+    if (accountIds.length === 0) {
+      res.json(empty);
+      return;
+    }
+
+    const scope = inArray(orders.marketplaceAccountId, accountIds);
+    const dispatchedScope = and(
+      scope,
+      sql`exists (select 1 from ${shipments} where ${shipments.orderId} = ${orders.id} and ${shipments.packedAt} is not null)`
+    );
+
+    const [dispatchedRow] = await db
+      .select({
+        count: sql<number>`count(distinct ${orders.id})::int`,
+        amount: sql<string>`coalesce(sum(${orderItems.invoiceAmount}), 0)::text`,
+      })
+      .from(orders)
+      .leftJoin(orderItems, eq(orderItems.orderId, orders.id))
+      .where(dispatchedScope);
+
+    const [returnsRow] = await db
+      .select({
+        expected: sql<number>`count(*)::int`,
+        received: sql<number>`count(*) filter (where ${returns.deliveredAt} is not null)::int`,
+        pending: sql<number>`count(*) filter (where ${returns.deliveredAt} is null)::int`,
+        dueToday: sql<number>`count(*) filter (
+          where ${returns.deliveredAt} is null
+            and date_trunc('day', ${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days') = date_trunc('day', now())
+        )::int`,
+        // Day-level (not instant-level) comparison so a return whose 5-day
+        // deadline is *today* counts as dueToday, not both dueToday AND
+        // overdue depending on what second of today it currently is.
+        overdue: sql<number>`count(*) filter (
+          where ${returns.deliveredAt} is null
+            and date_trunc('day', ${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days') < date_trunc('day', now())
+        )::int`,
+      })
+      .from(returns)
+      .innerJoin(orders, eq(orders.id, returns.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .where(and(eq(brands.companyId, companyId), sql`${returns.initiatedAt} is not null`));
+
+    const totals = {
+      ordersDispatched: dispatchedRow?.count ?? 0,
+      dispatchAmount: dispatchedRow?.amount ?? "0",
+      returnsExpected: returnsRow?.expected ?? 0,
+      returnsReceived: returnsRow?.received ?? 0,
+      returnsPending: returnsRow?.pending ?? 0,
+      returnsDueToday: returnsRow?.dueToday ?? 0,
+      returnsOverdue: returnsRow?.overdue ?? 0,
+    };
+
+    // ---- platform-wise breakdown ----
+    const platformDispatch = await db
+      .select({
+        marketplace: marketplaceAccounts.marketplace,
+        ordersDispatched: sql<number>`count(distinct ${orders.id})::int`,
+        dispatchAmount: sql<string>`coalesce(sum(${orderItems.invoiceAmount}), 0)::text`,
+      })
+      .from(orders)
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .leftJoin(orderItems, eq(orderItems.orderId, orders.id))
+      .where(dispatchedScope)
+      .groupBy(marketplaceAccounts.marketplace);
+
+    const platformReturns = await db
+      .select({
+        marketplace: marketplaceAccounts.marketplace,
+        returnsReceived: sql<number>`count(*)::int`,
+      })
+      .from(returns)
+      .innerJoin(orders, eq(orders.id, returns.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .where(and(eq(brands.companyId, companyId), sql`${returns.deliveredAt} is not null`))
+      .groupBy(marketplaceAccounts.marketplace);
+
+    const platformMap = new Map<
+      string,
+      { marketplace: string; ordersDispatched: number; dispatchAmount: string; returnsReceived: number }
+    >();
+    for (const row of platformDispatch) {
+      platformMap.set(row.marketplace, {
+        marketplace: row.marketplace,
+        ordersDispatched: row.ordersDispatched,
+        dispatchAmount: row.dispatchAmount,
+        returnsReceived: 0,
+      });
+    }
+    for (const row of platformReturns) {
+      const existing = platformMap.get(row.marketplace);
+      if (existing) existing.returnsReceived = row.returnsReceived;
+      else platformMap.set(row.marketplace, { marketplace: row.marketplace, ordersDispatched: 0, dispatchAmount: "0", returnsReceived: row.returnsReceived });
+    }
+    const byPlatform = Array.from(platformMap.values()).sort((a, b) => a.marketplace.localeCompare(b.marketplace));
+
+    // ---- per-day trend, last `days` days including today ----
+    const dispatchedByDay = await db
+      .select({
+        day: sql<string>`to_char(date_trunc('day', ${shipments.packedAt}), 'YYYY-MM-DD')`,
+        count: sql<number>`count(distinct ${orders.id})::int`,
+      })
+      .from(orders)
+      .innerJoin(shipments, and(eq(shipments.orderId, orders.id), sql`${shipments.packedAt} is not null`))
+      .where(and(scope, sql`${shipments.packedAt} >= date_trunc('day', now()) - interval '${sql.raw(String(days - 1))} days'`))
+      .groupBy(sql`date_trunc('day', ${shipments.packedAt})`);
+
+    const returnsExpectedByDay = await db
+      .select({
+        day: sql<string>`to_char(date_trunc('day', ${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days'), 'YYYY-MM-DD')`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(returns)
+      .innerJoin(orders, eq(orders.id, returns.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .where(
+        and(
+          eq(brands.companyId, companyId),
+          sql`${returns.initiatedAt} is not null`,
+          sql`(${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days') >= date_trunc('day', now()) - interval '${sql.raw(String(days - 1))} days'`
+        )
+      )
+      .groupBy(sql`date_trunc('day', ${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days')`);
+
+    const returnsReceivedByDay = await db
+      .select({
+        day: sql<string>`to_char(date_trunc('day', ${returns.deliveredAt}), 'YYYY-MM-DD')`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(returns)
+      .innerJoin(orders, eq(orders.id, returns.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .where(
+        and(
+          eq(brands.companyId, companyId),
+          sql`${returns.deliveredAt} is not null`,
+          sql`${returns.deliveredAt} >= date_trunc('day', now()) - interval '${sql.raw(String(days - 1))} days'`
+        )
+      )
+      .groupBy(sql`date_trunc('day', ${returns.deliveredAt})`);
+
+    const dispatchedMap = new Map(dispatchedByDay.map((r) => [r.day, r.count]));
+    const expectedMap = new Map(returnsExpectedByDay.map((r) => [r.day, r.count]));
+    const receivedMap = new Map(returnsReceivedByDay.map((r) => [r.day, r.count]));
+
+    const byDate: typeof empty.byDate = [];
+    const today = new Date();
+    for (let i = 0; i < days; i++) {
+      const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
+      const key = d.toISOString().slice(0, 10);
+      byDate.push({
+        date: key,
+        ordersDispatched: dispatchedMap.get(key) ?? 0,
+        returnsExpected: expectedMap.get(key) ?? 0,
+        returnsReceived: receivedMap.get(key) ?? 0,
+      });
+    }
+
+    res.json({ totals, byPlatform, byDate });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const dailySummaryDetailQuerySchema = z.object({
+  metric: z.enum(DAILY_SUMMARY_METRICS),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD")
+    .optional(),
+  platform: z.string().optional(),
+});
+
+/**
+ * The drill-down behind every clickable number in the Daily Summary panel.
+ * ?metric= picks which count; ?date= narrows to one day (Daily Summary
+ * table clicks); ?platform= narrows to one marketplace (Platform-wise
+ * Breakdown clicks). Neither given = the Overall Totals figure, all-time.
+ */
+dashboardRouter.get("/daily-summary/detail", async (req, res, next) => {
+  try {
+    const companyId = req.session!.companyId;
+    const parsed = dailySummaryDetailQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new HttpError(400, "Invalid daily-summary detail request.");
+    }
+    const { metric, date, platform } = parsed.data;
+
+    const accountRows = await db
+      .select({ id: marketplaceAccounts.id })
+      .from(marketplaceAccounts)
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .where(eq(brands.companyId, companyId));
+    const accountIds = accountRows.map((a) => a.id);
+
+    if (accountIds.length === 0) {
+      res.json({ kind: ORDER_METRICS.has(metric) ? "orders" : "returns", rows: [] });
+      return;
+    }
+
+    if (ORDER_METRICS.has(metric)) {
+      const scope = inArray(orders.marketplaceAccountId, accountIds);
+      const conditions = [
+        scope,
+        sql`exists (select 1 from ${shipments} where ${shipments.orderId} = ${orders.id} and ${shipments.packedAt} is not null)`,
+      ];
+      if (date) {
+        conditions.push(
+          sql`exists (select 1 from ${shipments} where ${shipments.orderId} = ${orders.id} and date_trunc('day', ${shipments.packedAt}) = ${date}::date)`
+        );
+      }
+      if (platform) conditions.push(sql`${marketplaceAccounts.marketplace} = ${platform}`);
+
+      const rows = await db
+        .select({
+          orderId: orders.id,
+          orderNo: orders.marketplaceOrderId,
+          brand: brands.name,
+          marketplace: marketplaceAccounts.marketplace,
+          status: orders.status,
+          dispatchedAt: shipments.packedAt,
+          awbNumber: shipments.awbNumber,
+          invoiceAmount: sql<string>`coalesce(sum(${orderItems.invoiceAmount}), 0)::text`,
+        })
+        .from(orders)
+        .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+        .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+        .leftJoin(shipments, eq(shipments.orderId, orders.id))
+        .leftJoin(orderItems, eq(orderItems.orderId, orders.id))
+        .where(and(...conditions))
+        .groupBy(orders.id, orders.marketplaceOrderId, brands.name, marketplaceAccounts.marketplace, orders.status, shipments.packedAt, shipments.awbNumber)
+        .orderBy(desc(shipments.packedAt))
+        .limit(500);
+
+      res.json({ kind: "orders", rows });
+      return;
+    }
+
+    // ---- returns-based metrics ----
+    const conditions = [eq(brands.companyId, companyId), sql`${returns.initiatedAt} is not null`];
+    if (platform) conditions.push(sql`${marketplaceAccounts.marketplace} = ${platform}`);
+
+    if (metric === "returnsReceived") {
+      conditions.push(sql`${returns.deliveredAt} is not null`);
+      if (date) conditions.push(sql`date_trunc('day', ${returns.deliveredAt}) = ${date}::date`);
+    } else if (metric === "returnsPending") {
+      conditions.push(sql`${returns.deliveredAt} is null`);
+    } else if (metric === "returnsDueToday") {
+      conditions.push(sql`${returns.deliveredAt} is null`);
+      conditions.push(sql`date_trunc('day', ${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days') = date_trunc('day', now())`);
+    } else if (metric === "returnsOverdue") {
+      conditions.push(sql`${returns.deliveredAt} is null`);
+      // Day-level, matching the /daily-summary totals aggregate — see its
+      // own comment on why this isn't `now() > expected`.
+      conditions.push(sql`date_trunc('day', ${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days') < date_trunc('day', now())`);
+    } else if (metric === "returnsExpected" && date) {
+      conditions.push(sql`date_trunc('day', ${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days') = ${date}::date`);
+    }
+
+    const rows = await db
+      .select({
+        id: returns.id,
+        status: returns.status,
+        orderNo: orders.marketplaceOrderId,
+        brand: brands.name,
+        marketplace: marketplaceAccounts.marketplace,
+        dispatchAwb: shipments.awbNumber,
+        returnAwb: returns.reverseAwb,
+        initiatedAt: returns.initiatedAt,
+        deliveredAt: returns.deliveredAt,
+        expectedReturnDate: sql<string>`(${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days')`,
+        // Day-level OVERDUE cutoff here (not the instant-level `now() >
+        // expected` that /returns/tracking's own dueStatus uses) so a row
+        // pulled up by clicking "Returns Due TODAY" never shows an
+        // OVERDUE badge just because a few seconds of today have already
+        // ticked past its exact deadline -- it needs to stay consistent
+        // with the day-bucketed dueToday/overdue counts right above.
+        dueStatus: sql<string>`
+          CASE
+            WHEN ${returns.deliveredAt} IS NOT NULL
+                 AND ${returns.deliveredAt} <= (${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days')
+              THEN 'RECEIVED_ON_TIME'
+            WHEN ${returns.deliveredAt} IS NOT NULL THEN 'RECEIVED_LATE'
+            WHEN date_trunc('day', ${returns.initiatedAt} + interval '${sql.raw(String(EXPECTED_RETURN_WINDOW_DAYS))} days') < date_trunc('day', now()) THEN 'OVERDUE'
+            ELSE 'DUE'
+          END
+        `,
+      })
+      .from(returns)
+      .innerJoin(orders, eq(orders.id, returns.orderId))
+      .innerJoin(marketplaceAccounts, eq(marketplaceAccounts.id, orders.marketplaceAccountId))
+      .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+      .leftJoin(shipments, eq(shipments.orderId, orders.id))
+      .where(and(...conditions))
+      .orderBy(desc(returns.initiatedAt))
+      .limit(500);
+
+    res.json({ kind: "returns", rows });
   } catch (err) {
     next(err);
   }
