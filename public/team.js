@@ -83,6 +83,13 @@
         if (u.role !== "OWNER" || iAmOwner) {
           actions += "<button type='button' class='bm-mini' data-u-edit='" + u.id + "'>Edit</button> ";
         }
+        // Companies (multi-company access) only makes sense for a team
+        // member, never the OWNER row itself (an OWNER's own company list
+        // grows through "Add Company" on Setup, a different flow), and only
+        // an OWNER can grant it (matches the backend's requireRole("OWNER")).
+        if (u.role !== "OWNER" && iAmOwner) {
+          actions += "<button type='button' class='bm-mini' data-u-access='" + u.id + "'>Companies</button> ";
+        }
         if (u.role !== "OWNER") {
           actions += "<button type='button' class='bm-mini' data-u-toggle='" + u.id + "'>" + (u.isActive ? "Deactivate" : "Activate") + "</button>" +
             " <button type='button' class='bm-mini danger' data-u-del='" + u.id + "'>Revoke all</button>";
@@ -116,6 +123,74 @@
       });
       $all("[data-u-edit]").forEach(function (b) {
         b.addEventListener("click", function () { openEditModal(Number(b.getAttribute("data-u-edit"))); });
+      });
+      $all("[data-u-access]").forEach(function (b) {
+        b.addEventListener("click", function () { openAccessModal(Number(b.getAttribute("data-u-access"))); });
+      });
+    });
+  }
+
+  // ---------- Companies (multi-company access) — modal dialog ----------
+  // "Login hone ke baad jisko jo company assign karni ho ya sabhi company
+  // ka access dena ho to vo andar se ho" -- this is that: pick which of
+  // *your own* companies this teammate can log into, or grant every one in
+  // a single click, without switching workspaces or re-adding the same
+  // person by hand in each one.
+  function openAccessModal(id) {
+    var u = teamRows.find(function (x) { return x.id === id; });
+    if (!u) return;
+
+    var m = window.NcrModal.open({
+      title: "Company access — " + (u.displayName || u.email),
+      bodyHtml:
+        "<p class='panel-sub' style='margin-top:0'>Ye " + esc(u.email) + " ko kin companies me login karne diya jaye, tick karo. Same email/password sabhi tick ki hui companies me kaam karega.</p>" +
+        "<div id='ua-list' style='margin:10px 0'><span class='empty'>Loading…</span></div>" +
+        "<div style='display:flex;gap:8px;margin-bottom:14px'>" +
+          "<button type='button' class='bm-mini' id='ua-all'>Select all</button>" +
+          "<button type='button' class='bm-mini' id='ua-none'>Select none</button>" +
+        "</div>" +
+        "<div id='ua-modal-result' class='result' hidden></div>" +
+        "<button type='button' class='btn' id='ua-save'>Save Access</button>",
+    });
+
+    function uaMsg(kind, msg) {
+      var box = m.body.querySelector("#ua-modal-result");
+      box.className = "result " + kind;
+      box.textContent = msg;
+      box.hidden = false;
+    }
+
+    function renderList(rows) {
+      var list = m.body.querySelector("#ua-list");
+      if (!rows.length) { list.innerHTML = "<span class='empty'>Aapke paas khud sirf ek hi company hai.</span>"; return; }
+      list.innerHTML = rows.map(function (c) {
+        return "<label style='display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)'>" +
+          "<input type='checkbox' class='ua-co' data-cid='" + c.companyId + "'" + (c.granted ? " checked" : "") + " /> " +
+          "<span>" + esc(c.companyName) + "</span></label>";
+      }).join("");
+    }
+
+    api("/users/" + id + "/access").then(function (r) {
+      if (!r.ok || !Array.isArray(r.data)) { uaMsg("err", (r.data && r.data.error) || "Could not load."); return; }
+      renderList(r.data);
+    });
+
+    m.body.querySelector("#ua-all").addEventListener("click", function () {
+      Array.prototype.slice.call(m.body.querySelectorAll(".ua-co")).forEach(function (c) { c.checked = true; });
+    });
+    m.body.querySelector("#ua-none").addEventListener("click", function () {
+      Array.prototype.slice.call(m.body.querySelectorAll(".ua-co")).forEach(function (c) { c.checked = false; });
+    });
+
+    m.body.querySelector("#ua-save").addEventListener("click", function () {
+      var companyIds = Array.prototype.slice.call(m.body.querySelectorAll(".ua-co")).filter(function (c) { return c.checked; }).map(function (c) { return Number(c.getAttribute("data-cid")); });
+      var btn = m.body.querySelector("#ua-save");
+      btn.disabled = true;
+      api("/users/" + id + "/access", { method: "PUT", body: { companyIds: companyIds } }).then(function (r) {
+        btn.disabled = false;
+        if (!r.ok) { uaMsg("err", (r.data && r.data.error) || "Save failed."); return; }
+        renderList(r.data);
+        entryMsg("ok", "Company access updated ✓");
       });
     });
   }
