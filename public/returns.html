@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Returns Tracking — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/nav.css" />
+<style>
+  .ret-tabs { display: flex; gap: 10px; margin-bottom: 18px; }
+  .ret-tabs button {
+    flex: 1; background: var(--bg2); border: 1px solid var(--line2); color: var(--muted);
+    padding: 12px 10px; border-radius: 12px; cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 600;
+    transition: all .2s;
+  }
+  .ret-tabs button.sel { border-color: var(--gold2); color: var(--gold); background: rgba(216,180,92,.08); }
+  .due-DUE { background: rgba(152, 162, 179, 0.15); color: var(--muted); }
+  .due-OVERDUE { background: rgba(229, 105, 122, 0.14); color: var(--red); }
+  .due-RECEIVED_ON_TIME { background: rgba(70, 185, 138, 0.14); color: var(--green); }
+  .due-RECEIVED_LATE { background: rgba(240, 150, 90, 0.14); color: var(--orange); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Returns Tracking</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/scan" class="tb-logout" style="text-decoration:none">Return Receive scan →</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <section class="panel wide">
+    <div class="ret-tabs" role="tablist">
+      <button type="button" data-tab="pending" class="sel">Upcoming Returns — Pending / Not Yet Received</button>
+      <button type="button" data-tab="all">Expected vs Received</button>
+    </div>
+
+    <!-- ============ TAB: PENDING ============ -->
+    <div id="tab-pending">
+      <div class="panel-head">
+        <h2 class="serif">Upcoming Returns</h2>
+        <span class="chip chip-dim" id="pending-count">—</span>
+      </div>
+      <p class="panel-sub">Every return that's been initiated but not yet physically received at the warehouse. Expected Return Date = Return Initiated Date + 5 days. Scan the Return/AWB ID on <a href="/scan" style="color:var(--gold)">Return Receive</a> when the box actually arrives — this list updates as soon as it's scanned.</p>
+      <div class="tablewrap">
+        <table id="pending-table">
+          <thead>
+            <tr><th>Return/AWB ID</th><th>Order No</th><th>Brand / Marketplace</th><th>Return Initiated Date</th><th>Expected Return Date</th><th>Status</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="pending-empty" class="empty">No pending returns — nothing waiting to come back right now.</div>
+      </div>
+    </div>
+
+    <!-- ============ TAB: EXPECTED VS RECEIVED ============ -->
+    <div id="tab-all" hidden>
+      <div class="panel-head">
+        <h2 class="serif">Returns — Expected vs Received</h2>
+        <span class="chip chip-dim" id="all-count">—</span>
+      </div>
+      <p class="panel-sub">Every return, comparing when it was expected back (Initiated + 5 days) against when it actually arrived. "Overdue" means the 5-day window has passed with nothing received yet; "Late" means it came back, just after the window.</p>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <input id="all-search" type="text" placeholder="Search order no / AWB" style="flex:1;min-width:220px" />
+        <select id="all-status-filter">
+          <option value="">All statuses</option>
+          <option value="DUE">Due</option>
+          <option value="OVERDUE">Overdue</option>
+          <option value="RECEIVED_ON_TIME">Received — on time</option>
+          <option value="RECEIVED_LATE">Received — late</option>
+        </select>
+      </div>
+      <div class="tablewrap">
+        <table id="all-table">
+          <thead>
+            <tr><th>Return ID</th><th>Order No</th><th>Platform</th><th>Dispatch AWB</th><th>Return AWB</th><th>Expected Return Date</th><th>Received Date</th><th>Status</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="all-empty" class="empty">No returns recorded yet.</div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="/returns.js"></script>
+<script src="/nav.js"></script>
+</body>
+</html>

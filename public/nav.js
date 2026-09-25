@@ -37,7 +37,11 @@
     { sec: "inventory", ico: "📚", label: "Inventory", href: "/reports", inPageNav: "reports", tab: "fees" },
     { sec: "reports", ico: "📊", label: "Reports", href: "/reports", inPageNav: "reports" },
     { sec: "finance", ico: "💰", label: "Finance", href: "/finance", inPageNav: "finance" },
-    { sec: "returns", ico: "↩️", label: "Returns", href: "/scan" },
+    // Returns now points at the tracking report (Upcoming/Pending + Expected
+    // vs Received), added 2026-09-25 -- actual scanning/upload actions stay
+    // under Scan Station, which already has its own Return Sheet / Return
+    // Receive tabs.
+    { sec: "returns", ico: "↩️", label: "Returns", href: "/returns" },
     { sec: "setup", ico: "⚙️", label: "Company & Setup", href: "/setup" },
     { sec: "setup", ico: "🤝", label: "Party Master", href: "/party" },
     { sec: "orders", ico: "✍️", label: "Single Entry", href: "/entry" },
