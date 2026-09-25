@@ -47,6 +47,56 @@
     });
   }
 
+  // ---------- SKU auto-match ("sku auto select kare khud samjh ke ki ye
+  // isme jayega") — used by the "Map SKU" fix-it modal to guess which
+  // internal SKU a marketplace SKU string like "HT-03-Black_XL" really
+  // means, instead of making the person scroll/search every time. Pure
+  // string comparison, no server round trip needed. ----------
+  function skuCompact(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+  function skuTokens(s) { return String(s || "").toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); }
+  function levenshtein(a, b) {
+    var m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    var prev = [];
+    for (var j = 0; j <= n; j++) prev[j] = j;
+    for (var i = 1; i <= m; i++) {
+      var cur = [i];
+      for (var j2 = 1; j2 <= n; j2++) {
+        cur[j2] = Math.min(prev[j2] + 1, cur[j2 - 1] + 1, prev[j2 - 1] + (a[i - 1] === b[j2 - 1] ? 0 : 1));
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
+  function tokenJaccard(aTokens, bTokens) {
+    if (!aTokens.length || !bTokens.length) return 0;
+    var setA = {}; aTokens.forEach(function (t) { setA[t] = 1; });
+    var setB = {}; bTokens.forEach(function (t) { setB[t] = 1; });
+    var inter = 0;
+    Object.keys(setA).forEach(function (t) { if (setB[t]) inter++; });
+    var union = Object.keys(setA).length + Object.keys(setB).length - inter;
+    return union ? inter / union : 0;
+  }
+  /** 0..1 — how likely `marketplaceSku` refers to this internal `sku`. */
+  function skuMatchScore(marketplaceSku, sku) {
+    var mCompact = skuCompact(marketplaceSku);
+    var mTokens = skuTokens(marketplaceSku);
+    var candidates = [sku.code, sku.productTitle].filter(Boolean);
+    var best = 0;
+    candidates.forEach(function (c) {
+      var cCompact = skuCompact(c);
+      if (!cCompact) return;
+      if (cCompact === mCompact) { best = 1; return; }
+      var lev = 1 - levenshtein(mCompact, cCompact) / Math.max(mCompact.length, cCompact.length, 1);
+      var jac = tokenJaccard(mTokens, skuTokens(c));
+      var combined = Math.max(lev, jac) * 0.65 + Math.min(lev, jac) * 0.35;
+      if (cCompact.indexOf(mCompact) !== -1 || mCompact.indexOf(cCompact) !== -1) combined = Math.max(combined, 0.8);
+      if (combined > best) best = combined;
+    });
+    return best;
+  }
+
   $("#tb-role").textContent = auth.role || "OWNER";
   // Company Profile (the authoritative source) now lives on /setup — the
   // topbar here just mirrors the session's cached name, same as the other
@@ -255,8 +305,9 @@
     var m = window.NcrModal.open({
       title: "Map “" + marketplaceSku + "”",
       bodyHtml:
-        "<p style='margin:0 0 10px;font-size:13px;color:var(--muted)'>This marketplace SKU has no internal SKU mapping for <b>" +
-          esc(acct.sellerAccountLabel || acct.marketplace) + "</b>, so orders using it get rejected. Pick an existing SKU below, or create a new one.</p>" +
+        "<p style='margin:0 0 6px;font-size:13px;color:var(--muted)'>This marketplace SKU has no internal SKU mapping for <b>" +
+          esc(acct.sellerAccountLabel || acct.marketplace) + "</b>, so orders using it get rejected.</p>" +
+        "<div id='ms-hint' style='margin:0 0 10px;font-size:12px;color:var(--muted)'>Looking for a match…</div>" +
         "<label>Search your SKUs <input id='ms-search' type='text' placeholder='code or title…' autocomplete='off' /></label>" +
         "<div id='ms-list' style='max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:4px;margin:8px 0'>Loading…</div>" +
         "<div class='bm-head' style='margin-top:14px'><b>Or create a new SKU &amp; map it</b></div>" +
@@ -272,32 +323,59 @@
       box.hidden = false;
     }
 
+    // "SKU auto select kare khud samjh ke ki ye isme jayega" -- rank every
+    // candidate SKU by how likely it is the same product as the marketplace
+    // SKU string (see skuMatchScore above), instead of leaving the person to
+    // scroll/search a possibly long SKU list every single time.
+    var AUTO_THRESHOLD = 0.92; // near/exact match -- confident enough to map without a click
+    var SUGGEST_THRESHOLD = 0.45; // still worth highlighting, but needs a confirm click
     var allSkus = [];
+    var scored = [];
     function renderList(filterText) {
       var list = m.body.querySelector("#ms-list");
       var f = (filterText || "").trim().toLowerCase();
-      var rows = !f ? allSkus : allSkus.filter(function (s) {
+      var rows = !f ? scored : scored.filter(function (s) {
         return (s.code || "").toLowerCase().indexOf(f) !== -1 || (s.productTitle || "").toLowerCase().indexOf(f) !== -1;
       });
       if (!rows.length) { list.innerHTML = "<span class='empty'>No matching SKU — create one below.</span>"; return; }
-      list.innerHTML = rows.slice(0, 100).map(function (s) {
-        return "<button type='button' class='bm-mini' data-sku-id='" + s.id + "' style='text-align:left;justify-content:flex-start'>" +
-          "<b>" + esc(s.code) + "</b>" + (s.productTitle ? " — " + esc(s.productTitle) : "") + (s.size ? " (" + esc(s.size) + ")" : "") +
+      list.innerHTML = rows.slice(0, 100).map(function (s, idx) {
+        var suggested = !f && idx === 0 && s._score >= SUGGEST_THRESHOLD;
+        return "<button type='button' class='bm-mini' data-sku-id='" + s.id + "'" +
+          " style='text-align:left;justify-content:flex-start;flex-direction:column;align-items:flex-start" +
+          (suggested ? ";border-color:var(--gold2);background:rgba(216,180,92,0.08)" : "") + "'>" +
+          (suggested ? "<span style='color:var(--gold);font-size:10px;letter-spacing:.6px;font-weight:600'>SUGGESTED MATCH</span>" : "") +
+          "<span><b>" + esc(s.code) + "</b>" + (s.productTitle ? " — " + esc(s.productTitle) : "") + (s.size ? " (" + esc(s.size) + ")" : "") + "</span>" +
           "</button>";
       }).join("");
     }
 
-    function mapToSku(skuId) {
+    function mapToSku(skuId, auto) {
       api("/skus/map", { method: "POST", body: { marketplaceAccountId: accountId, marketplaceSku: marketplaceSku, skuId: skuId } }).then(function (r) {
         if (!r.ok) { msMsg("err", (r.data && r.data.error) || "Mapping failed."); return; }
-        msMsg("ok", "Mapped! Re-upload the same CSV — this order will go through now (already-imported rows are safely skipped as duplicates).");
-        setTimeout(function () { m.close(); }, 1600);
+        msMsg("ok", (auto ? "Auto-mapped (matched automatically). " : "Mapped! ") +
+          "Re-upload the same CSV — this order will go through now (already-imported rows are safely skipped as duplicates).");
+        setTimeout(function () { m.close(); }, 1800);
       }).catch(function () { msMsg("err", "Network error — try again."); });
     }
 
     api("/companies/me/brands/" + acct.brandId + "/skus").then(function (r) {
       allSkus = (r.ok && Array.isArray(r.data)) ? r.data : [];
-      renderList("");
+      scored = allSkus
+        .map(function (s) { return Object.assign({}, s, { _score: skuMatchScore(marketplaceSku, s) }); })
+        .sort(function (a, b) { return b._score - a._score; });
+      var top = scored[0];
+      var hint = m.body.querySelector("#ms-hint");
+      if (top && top._score >= AUTO_THRESHOLD) {
+        hint.textContent = "Confident match found — mapping automatically…";
+        renderList("");
+        mapToSku(top.id, true);
+      } else if (top && top._score >= SUGGEST_THRESHOLD) {
+        hint.textContent = "Best guess highlighted below — click to confirm, or search/create a different one.";
+        renderList("");
+      } else {
+        hint.textContent = allSkus.length ? "No confident match — search below or create a new SKU." : "No SKUs yet for this brand — create one below.";
+        renderList("");
+      }
     });
 
     m.body.querySelector("#ms-search").addEventListener("input", function (e2) { renderList(e2.target.value); });

@@ -20,6 +20,13 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-25 pt.4] — "Map SKU" modal now auto-suggests/auto-maps instead of making you search — **by Claude (Anthropic), delivered as a browser-upload zip**
+
+- **User ask, right after pt.3 shipped:** "sku auto select kare khud samjh ke ki ye isme jayega" — the Map SKU modal should figure out on its own which internal SKU a marketplace SKU like "HT-03-Black_XL" means, instead of the person having to search/scroll every time.
+- **`public/app.js` — new `skuMatchScore()`** (pure client-side string comparison, no new endpoint/round trip): normalizes both the marketplace SKU and every candidate SKU's `code`/`productTitle` by stripping punctuation/case, then scores 0–1 using a blend of Levenshtein similarity and token-set (Jaccard) overlap, with a containment bonus (handles reordered/extra tokens like Snapdeal's "SD" suffix). Verified with representative cases: `"HT-03-Black_XL"` vs `"HT-03-Black-XL"` → 1.0 (punctuation/case-only difference); `"HT-BLUE-SD_S"` vs `"HT-Blue-S"` → 0.8 (close but not identical — correctly not auto-mapped); a genuinely unrelated SKU → ~0.1–0.3 (correctly no suggestion at all).
+- **`openMapSkuModal()` now**: scores and sorts every candidate SKU on open. Score ≥ 0.92 (near/exact match) → maps automatically the instant the modal opens, no click needed, with a plain "Auto-mapped (matched automatically)" confirmation — the list stays visible underneath so it's never a silent black box, and any wrong auto-map can be corrected with one click on a different SKU below (re-mapping just updates the same mapping row, `POST /skus/map` already upserts). Score ≥ 0.45 but below the auto threshold → the best guess is visually flagged "SUGGESTED MATCH" at the top of the list, one click to confirm. Below that → falls back to the plain searchable list from pt.3, unchanged.
+- **Files:** `public/app.js`, `BRAIN.md`.
+
 ### [2026-09-25 pt.3] — Duplicate orders now called out by name on upload, + an in-app "Map SKU" fix-it for unmapped-SKU import failures — **by Claude (Anthropic), delivered as a browser-upload zip**
 
 - **User report, with a real screenshot:** a Flipkart-account upload showed "0 orders imported, 11 failed" with `No SKU mapping found for marketplace SKU "HT-03-Black_XL"` (and 4 more SKUs) as the error on every row, and asked two things — that duplicate orders "ka bhi pata chalna chahiye" (should also be visible/knowable), and what this specific error actually is.
