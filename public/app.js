@@ -424,22 +424,31 @@
     if (f) setAwbFile(f);
   });
   function setAwbFile(f) {
-    if (!/\.csv$/i.test(f.name)) { showAwbResult("err", "Only .csv files are accepted."); return; }
+    var isPdf = /\.pdf$/i.test(f.name);
+    var isCsv = /\.csv$/i.test(f.name);
+    if (!isPdf && !isCsv) { showAwbResult("err", "Only .csv or .pdf files are accepted."); return; }
     awbSelectedFile = f;
     $("#awb-dz-name").textContent = f.name + " (" + (f.size / 1024).toFixed(1) + " KB)";
   }
 
+  // Meesho's real "Supplier Manifest" (2026-09-26) is a PDF, parsed server
+  // side (see src/ingestion/meeshoManifestPdf.ts) -- read as base64 and
+  // posted as pdfBase64, same convention Finance's settlement-report upload
+  // already uses for its .xlsx files. A .csv still reads as plain text and
+  // posts as csv, unchanged.
   $("#awb-upload-form").addEventListener("submit", function (e) {
     e.preventDefault();
     $("#awb-upload-result").hidden = true;
-    if (!awbSelectedFile) { showAwbResult("err", "Choose the AWB/manifest CSV first."); return; }
+    if (!awbSelectedFile) { showAwbResult("err", "Choose the AWB/manifest CSV or PDF first."); return; }
+    var isPdf = /\.pdf$/i.test(awbSelectedFile.name);
 
     var reader = new FileReader();
     reader.onload = function () {
       var btn = $("#awb-up-btn");
       btn.disabled = true;
       btn.classList.add("loading");
-      api("/orders/awb-import", { method: "POST", body: { csv: String(reader.result) } }).then(function (r) {
+      var body = isPdf ? { pdfBase64: String(reader.result).split(",")[1] || "" } : { csv: String(reader.result) };
+      api("/orders/awb-import", { method: "POST", body: body }).then(function (r) {
         btn.disabled = false;
         btn.classList.remove("loading");
         if (!r.ok) { showAwbResult("err", (r.data && r.data.error) || "Upload failed — try again."); return; }
@@ -449,7 +458,7 @@
           (failed ? ", <b>" + failed + " failed</b>" : "") + ".";
         var errs = (r.data.results || []).filter(function (x) { return x.error; }).slice(0, 5);
         if (errs.length) {
-          html += "<ul>" + errs.map(function (x) { return "<li>" + esc(x.order || "row") + ": " + esc(x.error) + "</li>"; }).join("") + "</ul>";
+          html += "<ul>" + errs.map(function (x) { return "<li>" + esc(x.order || x.row || "row") + ": " + esc(x.error) + "</li>"; }).join("") + "</ul>";
         }
         showAwbResult(imported > 0 ? "ok" : "err", html);
         loadSummary();
@@ -459,7 +468,8 @@
         if (err && err.message !== "session expired") showAwbResult("err", "Network error — try again.");
       });
     };
-    reader.readAsText(awbSelectedFile);
+    if (isPdf) reader.readAsDataURL(awbSelectedFile);
+    else reader.readAsText(awbSelectedFile);
   });
 
   function showAwbResult(kind, html) {

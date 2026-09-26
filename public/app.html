@@ -166,21 +166,24 @@
     <!-- ==================== UPLOAD AWB / MANIFEST ====================
          Meesho's order sheet (above) carries no AWB -- it only shows up in
          Meesho's separate manifest/label export once the shipment is
-         booked. No account/warehouse picker here on purpose: it matches
-         by order id against whichever company you're currently on, so it
-         works the same regardless of which company is selected. -->
+         booked, either as a CSV/Excel-style export OR as the real
+         "Supplier Manifest" PDF Meesho actually hands over (added 2026-09-26
+         -- see src/ingestion/meeshoManifestPdf.ts). No account/warehouse
+         picker here on purpose: it matches by order id against whichever
+         company you're currently on, so it works the same regardless of
+         which company is selected. -->
     <section class="panel upload-panel">
       <div class="panel-head">
         <h2 class="serif">Upload AWB / Manifest</h2>
         <span class="chip chip-dim">MEESHO &amp; OTHERS</span>
       </div>
-      <p class="panel-sub">Order sheet me AWB nahi aata (Meesho) — jab courier assign ho jaye, uska manifest/AWB export yaha daalo. Matches by order no — koi account chunne ki zaroorat nahi.</p>
+      <p class="panel-sub">Order sheet me AWB nahi aata (Meesho) — jab courier assign ho jaye, uska manifest/AWB export (.csv) YA seedha Meesho ka "Supplier Manifest" (.pdf) yaha daalo. Matches by order no — koi account chunne ki zaroorat nahi.</p>
 
       <form id="awb-upload-form">
         <label for="awb-file" class="dropzone" id="awb-dropzone">
-          <input type="file" id="awb-file" accept=".csv,text/csv" hidden />
+          <input type="file" id="awb-file" accept=".csv,text/csv,.pdf,application/pdf" hidden />
           <div class="dz-icon">⬆</div>
-          <div class="dz-text"><b id="awb-dz-name">Choose or drop AWB/manifest .csv</b><span>Order No / Sub Order No + AWB Number columns</span></div>
+          <div class="dz-text"><b id="awb-dz-name">Choose or drop AWB/manifest (.csv or .pdf)</b><span>Order No / Sub Order No + AWB Number columns, or Meesho's Supplier Manifest PDF</span></div>
         </label>
         <button id="awb-up-btn" class="btn" type="submit"><span class="spin"></span>Upload AWB List</button>
       </form>

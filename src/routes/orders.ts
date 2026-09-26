@@ -10,6 +10,7 @@ import { parseFlipkartExport } from "../ingestion/parsers/flipkart";
 import { parseMeeshoExport } from "../ingestion/parsers/meesho";
 import { parseSnapdealExport } from "../ingestion/parsers/snapdeal";
 import { parseCsvToRecords } from "../ingestion/csv";
+import { parseMeeshoManifestPdf } from "../ingestion/meeshoManifestPdf";
 import { ingestOrder, UnmappedSkuError } from "../modules/orders/ingest";
 import { InsufficientStockError } from "../modules/inventory/ledger";
 import { assertOrderInCompany, getOrderDetail, updateOrder, deleteOrder, OrderNotFoundError } from "../modules/orders/manage";
@@ -147,6 +148,17 @@ ordersRouter.post("/import/:marketplace", async (req, res, next) => {
 // CSV import) since this hasn't been run against a real Meesho manifest
 // export yet -- add a header spelling here rather than touching the
 // matching logic if a real file turns up one this list misses.
+//
+// PDF SUPPORT — added by Claude (Anthropic) 2026-09-26, user request
+// (Hinglish): "MEESHO SE YE FILE AATI HAI TRACKING KE LIYE PDF ME TO ISKO
+// KESE KARENGE". The real "Supplier Manifest" Meesho hands over for a
+// dispatch batch is a PDF, not a CSV (see ingestion/meeshoManifestPdf.ts
+// for the exact format and a real-file-verified parser). The request body
+// now accepts EITHER `csv` (unchanged) OR `pdfBase64` -- whichever is
+// present is turned into the same `{rawOrderNo, awb, carrier}` row shape
+// before falling into the one shared matching/upsert loop below, so the
+// order-matching logic itself (raw value, then Meesho's `<order
+// id>_<line seq>` stripped form) never has to be duplicated per format.
 // ---------------------------------------------------------------------------
 
 const AWB_ORDER_KEYS = [
@@ -194,15 +206,66 @@ function orderIdFromSubOrder(v: string): string {
   return idx === -1 ? v : v.slice(0, idx);
 }
 
-const awbImportSchema = z.object({ csv: z.string().min(5).max(5_000_000) });
+const awbImportSchema = z
+  .object({
+    csv: z.string().min(5).max(5_000_000).optional(),
+    // A base64-encoded PDF file (the browser reads the dropped file with
+    // FileReader.readAsDataURL / btoa, same general shape as how images are
+    // already handled elsewhere in this codebase -- see settlements.ts's
+    // comment on the CSV/AWB importers' own convention). ~14MB of base64 is
+    // comfortably inside app.ts's 40mb JSON body limit for a manifest PDF.
+    pdfBase64: z.string().min(10).max(20_000_000).optional(),
+  })
+  .refine((b) => Boolean(b.csv) !== Boolean(b.pdfBase64), { message: "Provide exactly one of csv or pdfBase64" });
+
+interface AwbRow {
+  rowLabel: string; // "row 2" for a CSV line, "page 3 row 1" for a PDF row
+  rawOrderNo: string;
+  awb: string;
+  carrier: string | null;
+}
 
 ordersRouter.post("/awb-import", requireRole("OWNER", "ADMIN", "OPS"), async (req, res, next) => {
   try {
     const body = awbImportSchema.parse(req.body);
     const companyId = req.session!.companyId;
 
-    const records = parseCsvToRecords(body.csv);
-    if (!records.length) throw new HttpError(400, "CSV had no data rows");
+    let rows: AwbRow[];
+    if (body.csv) {
+      const records = parseCsvToRecords(body.csv);
+      if (!records.length) throw new HttpError(400, "CSV had no data rows");
+      rows = records.map((rec, i) => ({
+        rowLabel: `row ${i + 2}`,
+        rawOrderNo: pickAwbField(rec, AWB_ORDER_KEYS).replace(/^'/, ""),
+        awb: pickAwbField(rec, AWB_KEYS),
+        carrier: pickAwbField(rec, CARRIER_KEYS) || null,
+      }));
+    } else {
+      let pdfBuffer: Buffer;
+      try {
+        pdfBuffer = Buffer.from(body.pdfBase64!, "base64");
+      } catch {
+        throw new HttpError(400, "pdfBase64 isn't valid base64");
+      }
+      let manifestRows;
+      try {
+        manifestRows = await parseMeeshoManifestPdf(pdfBuffer);
+      } catch (e) {
+        throw new HttpError(400, e instanceof Error ? e.message : "Couldn't read this PDF");
+      }
+      if (!manifestRows.length) {
+        throw new HttpError(
+          400,
+          "Couldn't find any AWB rows in this PDF — expected a Meesho Supplier Manifest with 'Courier : <name>' pages. If this is a different PDF layout, tell us and we'll add support for it.",
+        );
+      }
+      rows = manifestRows.map((r) => ({
+        rowLabel: `page ${r.page} — ${r.subOrderNo}`,
+        rawOrderNo: r.subOrderNo,
+        awb: r.awb,
+        carrier: r.carrier,
+      }));
+    }
 
     // Every order id in this company, regardless of which marketplace
     // account it's under -- the whole point is "sabhi company me/jis me bhi
@@ -219,11 +282,11 @@ ordersRouter.post("/awb-import", requireRole("OWNER", "ADMIN", "OPS"), async (re
     let imported = 0;
     let failed = 0;
 
-    for (const [i, rec] of records.entries()) {
-      const rowNo = i + 2;
-      const rawOrderNo = pickAwbField(rec, AWB_ORDER_KEYS).replace(/^'/, "");
-      const awb = pickAwbField(rec, AWB_KEYS);
-      const carrier = pickAwbField(rec, CARRIER_KEYS) || null;
+    for (const row of rows) {
+      const rowNo = row.rowLabel;
+      const rawOrderNo = row.rawOrderNo;
+      const awb = row.awb;
+      const carrier = row.carrier;
 
       try {
         if (!rawOrderNo) throw new Error("Row has no Order ID / Sub Order No column matched");
