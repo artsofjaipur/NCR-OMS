@@ -158,24 +158,34 @@ const CARRIER_KEYS = [
   "courier partner",
   "logistics partner",
   "shipping partner",
+  // Flipkart's actual return-export column (confirmed live 2026-09-25 against
+  // real Arvagam/Vardhamati/Kanjush return sheets) — without this, Flipkart
+  // returns never got a carrier captured at all.
+  "vendor name",
 ];
 // The freeform explanation text a marketplace attaches to a return (e.g.
 // "Size issue", "Order cancelled by buyer", "Undelivered — unreachable").
 // Distinct from returnType (below), which is the RTO-vs-customer-return
-// classification.
+// classification. "return reason" is checked before the generic "status" /
+// "return status" -- a real Meesho return-export (confirmed 2026-09-25) has
+// BOTH a "Status" column (shipment status, e.g. "Returned"/"Picked Up") AND
+// its own "Return Reason" column; picking "status" first, as this list used
+// to, silently captured the wrong text as the reason for every Meesho row.
 const REASON_KEYS = [
-  "return status",
-  "status",
-  "reason",
   "return reason",
+  "reason",
   "return sub reason",
   "rto reason",
   "cancellation reason",
+  "return status",
+  "status",
 ];
 // An explicit classification column, when the marketplace provides one —
-// Flipkart and Meesho both label this "Return Type" with values like
-// "Customer Return" / "RTO" / "Buyer Return" in their seller-panel exports.
-const TYPE_KEYS = ["return type", "returntype", "type", "return category"];
+// Flipkart labels this "Return Type" ("Customer Return" / "RTO" / "Buyer
+// Return"); Meesho's own column is literally named "Type of Return"
+// (confirmed live 2026-09-25) -- without this key, Meesho's explicit type
+// was missed entirely and fell through to reason-text guessing.
+const TYPE_KEYS = ["return type", "returntype", "type of return", "type", "return category"];
 
 function pick(rec: Record<string, string>, keys: string[]): string {
   for (const k of keys) {
@@ -196,15 +206,63 @@ function classifyReturnType(explicitType: string, reasonText: string): string | 
   const norm = (s: string) => s.trim().toLowerCase();
   const t = norm(explicitType);
   if (t) {
-    if (/\brto\b|return.?to.?origin/.test(t)) return "RTO";
+    // Flipkart's raw "courier_return" value IS an RTO in its own
+    // terminology (the parcel never reached the customer) -- confirmed live
+    // 2026-09-25 against real Flipkart return-export rows; without this the
+    // classifier returned the unclassified literal string "courier_return"
+    // instead of normalizing it, and the RTO->orders.status sync never fired.
+    if (/\brto\b|return.?to.?origin|courier.?return/.test(t)) return "RTO";
     if (/customer|buyer/.test(t)) return "CUSTOMER_RETURN";
     return explicitType.trim().slice(0, 40); // pass through whatever the sheet said, capped to column width
   }
   const r = norm(reasonText);
   if (!r) return null;
-  if (/\brto\b|undeliver|unreachable|refused|cancel(l)?ed by buyer|address issue/.test(r)) return "RTO";
+  if (/\brto\b|undeliver|unreachable|refused|cancel(l)?ed by buyer|address issue|courier.?return/.test(r)) return "RTO";
   if (/return|exchange|size issue|quality issue|damaged|defective|wrong (item|product)/.test(r)) return "CUSTOMER_RETURN";
   return null;
+}
+
+/**
+ * Best-effort marketplace detection from a return sheet's own column
+ * headers -- one CSV upload is always one marketplace's report, so this
+ * only needs to run once per import, not per row. Used only to resolve
+ * which seller account a PLACEHOLDER order (see below) should be created
+ * under; never guesses when the header shape isn't recognized.
+ */
+function detectMarketplace(headerKeys: string[]): "FLIPKART" | "MEESHO" | "SNAPDEAL" | null {
+  const keys = new Set(headerKeys.map((k) => k.trim().toLowerCase()));
+  if (keys.has("vendor name") && keys.has("location id")) return "FLIPKART";
+  if (keys.has("suborder number") && keys.has("meesho pid")) return "MEESHO";
+  if (keys.has("ordercode")) return "SNAPDEAL";
+  return null;
+}
+
+/**
+ * The store's own return-sheet workflow (user request, 2026-09-26,
+ * Hinglish): "return chahe Meesho ka ho ya Flipkart, order sheet se match
+ * kar ke mark kar de return initiated, jo nahi mile vo bhi record me save
+ * ho jaye, jab aaye to sabko RECEIVED mark karna hai" -- a return that
+ * can't be matched to an existing order must NOT be silently dropped
+ * (the old behavior: throw and skip, nothing saved), because the physical
+ * item is still coming and the warehouse-floor Return Receive scan
+ * (POST /returns/scan) needs a real `returns` row to find later. Since
+ * `returns.orderId` is NOT NULL, an unmatched row gets a clearly-flagged
+ * PLACEHOLDER order + order item created for it (status/price/product are
+ * placeholders -- see the row result's `orderCreated` flag and the order's
+ * own `holdReason`) so the return still gets recorded as INITIATED and
+ * stays scannable/receivable exactly like a normal return. Only runs when
+ * the sheet's marketplace was confidently detected AND this company has
+ * exactly one active seller account for it (ambiguous cases are left to
+ * fail with the original "not found" error rather than guessing wrong).
+ */
+async function resolvePlaceholderAccountId(companyId: number, marketplace: "FLIPKART" | "MEESHO" | "SNAPDEAL" | null): Promise<number | null> {
+  if (!marketplace) return null;
+  const accounts = await db
+    .select({ id: marketplaceAccounts.id })
+    .from(marketplaceAccounts)
+    .innerJoin(brands, eq(brands.id, marketplaceAccounts.brandId))
+    .where(and(eq(brands.companyId, companyId), eq(marketplaceAccounts.marketplace, marketplace), eq(marketplaceAccounts.isActive, true)));
+  return accounts.length === 1 ? accounts[0].id : null;
 }
 
 returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, res, next) => {
@@ -247,6 +305,11 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
       lineItemRows.filter((r) => r.lineItemId).map((r) => [r.lineItemId as string, { orderId: r.orderId, orderNo: r.orderNo, brand: r.brand, mp: r.mp }]),
     );
 
+    // Resolved once per import (one CSV = one marketplace) -- see
+    // resolvePlaceholderAccountId's doc comment for why this exists.
+    const detectedMarketplace = detectMarketplace(Object.keys(records[0] ?? {}));
+    const placeholderAccountId = await resolvePlaceholderAccountId(companyId, detectedMarketplace);
+
     const results: Array<Record<string, unknown>> = [];
     let imported = 0;
     let failed = 0;
@@ -272,7 +335,48 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
         // the order's own marketplace id); line-item match second (a
         // "Suborder ID" that's really the per-item SUBORDERCODE -- see
         // byLineItemId above).
-        const match = orderNo ? byOrderNo.get(orderNo) ?? byLineItemId.get(orderNo) : undefined;
+        let match = orderNo ? byOrderNo.get(orderNo) ?? byLineItemId.get(orderNo) : undefined;
+        let orderCreated = false;
+
+        if (!match && orderNo && placeholderAccountId) {
+          // The order genuinely isn't in the system yet, but we know which
+          // seller account it belongs to (see resolvePlaceholderAccountId)
+          // -- create a clearly-flagged placeholder so the return itself
+          // isn't lost (see the big doc comment above this route for why).
+          const [newOrder] = await db
+            .insert(orders)
+            .values({
+              marketplaceAccountId: placeholderAccountId,
+              marketplaceOrderId: orderNo,
+              status: returnType === "RTO" ? "RTO_INITIATED" : "DELIVERED",
+              orderedAt: Number.isNaN(initiatedAt.getTime()) ? new Date() : initiatedAt,
+              holdReason: `Auto-created from a return-sheet import: the original order wasn't found in the system when this ${returnType === "RTO" ? "RTO" : "return"} was recorded. Order date is approximated from the return date; product/quantity/price are UNKNOWN placeholders -- verify against the marketplace seller panel and correct.`,
+            })
+            .onConflictDoNothing({ target: [orders.marketplaceAccountId, orders.marketplaceOrderId] })
+            .returning({ id: orders.id });
+          // onConflictDoNothing returns nothing on the (rare) race where a
+          // concurrent upload created the same order a moment ago -- fetch
+          // it instead of failing the row.
+          const orderId = newOrder?.id ?? (await db.select({ id: orders.id }).from(orders).where(and(eq(orders.marketplaceAccountId, placeholderAccountId), eq(orders.marketplaceOrderId, orderNo))).limit(1))[0]?.id;
+          if (orderId) {
+            const [alreadyHasItem] = await db.select({ id: orderItems.id }).from(orderItems).where(eq(orderItems.orderId, orderId)).limit(1);
+            if (!alreadyHasItem) {
+              await db.insert(orderItems).values({
+                orderId,
+                marketplaceLineItemId: null,
+                marketplaceSku: "UNKNOWN-RETURN-IMPORT",
+                productTitleSnapshot: "Unknown — auto-created from return-sheet import, needs verification against the marketplace seller panel",
+                quantity: 1,
+                unitPrice: "0",
+              });
+            }
+            // detectedMarketplace can't be null here: placeholderAccountId
+            // only resolves (see resolvePlaceholderAccountId) when it isn't.
+            match = { orderId, orderNo, brand: "", mp: detectedMarketplace! };
+            orderCreated = true;
+          }
+        }
+
         if (!match) throw new Error(`Order "${orderNo || awb}" not found in this workspace — upload the order CSV first`);
 
         // Idempotent upsert: one open return per order.
@@ -308,7 +412,16 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
           // instead of waiting for a floor scan that may never happen for
           // an already-old/completed return being backfilled in bulk.
           if (receivedAtValid) await markReturnReceived(existing.id, receivedAtValid);
-          results.push({ row: rowNo, order: orderNo, returnId: existing.id, returnType, updated: true, received: Boolean(receivedAtValid) });
+          results.push({
+            row: rowNo,
+            order: orderNo,
+            returnId: existing.id,
+            returnType,
+            updated: true,
+            received: Boolean(receivedAtValid),
+            orderCreated,
+            ...(orderCreated ? { warning: "Order wasn't in the system — created as a placeholder (product/price unknown). Verify it against the seller panel." } : {}),
+          });
         } else {
           const { returnId } = await initiateReturn({
             orderId: match.orderId,
@@ -319,7 +432,18 @@ returnsRouter.post("/import", requireRole("OWNER", "ADMIN", "OPS"), async (req, 
             initiatedAt: Number.isNaN(initiatedAt.getTime()) ? new Date() : initiatedAt,
           });
           if (receivedAtValid) await markReturnReceived(returnId, receivedAtValid);
-          results.push({ row: rowNo, order: orderNo, returnId, returnType, created: true, brand: match.brand, marketplace: match.mp, received: Boolean(receivedAtValid) });
+          results.push({
+            row: rowNo,
+            order: orderNo,
+            returnId,
+            returnType,
+            created: true,
+            brand: match.brand,
+            marketplace: match.mp,
+            received: Boolean(receivedAtValid),
+            orderCreated,
+            ...(orderCreated ? { warning: "Order wasn't in the system — created as a placeholder (product/price unknown). Verify it against the seller panel." } : {}),
+          });
         }
         imported += 1;
       } catch (e) {
