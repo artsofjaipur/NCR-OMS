@@ -29,7 +29,6 @@
  * can't accidentally match text inside a wrapped SKU/product-name line,
  * which is free text and never has that exact shape.
  */
-import { PDFParse } from "pdf-parse";
 
 export interface ManifestPdfRow {
   subOrderNo: string;
@@ -54,6 +53,16 @@ const ROW_RE = /(\d+)\s+(\d+)\s*\n(\d+_\d+)\s+(\S+)/g;
  * rows in this PDF" rather than a raw parser exception.
  */
 export async function parseMeeshoManifestPdf(pdfBuffer: Buffer): Promise<ManifestPdfRow[]> {
+  // pdf-parse wraps pdf.js, which touches browser-only globals
+  // (DOMMatrix/Path2D/ImageData) at MODULE-EVALUATION time. Kept as a LAZY
+  // dynamic import, not a top-level import: in bundled serverless builds
+  // (Vercel bundles every Node function), evaluating this module up-front
+  // crashes cold-start with "ReferenceError: DOMMatrix is not defined" --
+  // which took the ENTIRE app down (every route 500'd, including
+  // /auth/login => the "login issue"). Lazy-loading means the app boots
+  // fine and only this one feature loads the PDF engine when a manifest is
+  // actually uploaded.
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: pdfBuffer });
   try {
     let result;
