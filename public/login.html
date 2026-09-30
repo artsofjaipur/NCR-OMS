@@ -66,14 +66,19 @@
         <label for="password">PASSWORD</label>
         <div class="field"><input id="password" type="password" placeholder="••••••••" autocomplete="current-password" /></div>
 
-        <label for="workspaceId">WORKSPACE ID <span style="opacity:0.6">(optional)</span></label>
-        <div class="field"><input id="workspaceId" type="text" inputmode="numeric" placeholder="Only if support gave you one" autocomplete="off" /></div>
-        <div class="hint">Leave empty normally — your email identifies the workspace.</div>
-
         <div class="row"><a href="/forgot-password.html">Forgot password?</a></div>
 
         <button id="login-btn" class="btn" type="submit"><span class="spin"></span>Sign in to Workspace</button>
       </form>
+
+      <!-- Shown only when one email/password matches more than one company
+           (e.g. the same password reused across companies) -- picking here
+           just resubmits the same login with that company's id, no manual
+           id entry ever required. Hidden by default. -->
+      <div id="company-pick" class="company-pick" hidden>
+        <p class="sub">Aapka email <b>multiple companies</b> me hai — konsi kholni hai?</p>
+        <div id="company-pick-list" class="company-pick-list"></div>
+      </div>
 
       <p class="footnote">New here? <a href="/create-account.html">Create an account</a></p>
     </div>

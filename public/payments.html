@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<script>try{var t=localStorage.getItem("ncr_theme");if(t&&t!=="midnight-gold")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Payments — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+<link rel="stylesheet" href="/nav.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Payments</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <a href="/orders" class="tb-logout" style="text-decoration:none">🧾 Orders</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- ==================== UPLOAD ==================== -->
+  <section class="panel" id="pay-upload">
+    <div class="panel-head"><h2 class="serif">Upload Payment / Settlement Report</h2><span class="chip">FLIPKART · MEESHO · SNAPDEAL</span></div>
+    <p class="panel-sub">Jo bhi payment sheet marketplace se milti hai (Flipkart/Meesho/Snapdeal) — jaisi hai waisi upload karo, marketplace apne aap pehchana jaata hai. Har order ke against fees/tax/ads sab match hoke report ban jaata hai.</p>
+    <form id="pay-form" class="fgrid" style="grid-template-columns:2fr 2fr 1fr">
+      <label>Seller Account <select id="pay-account"></select></label>
+      <label>Payment Report File (.xlsx)
+        <div class="dropzone" id="pay-drop">
+          <span id="pay-drop-label">Choose or drop a .xlsx file<br /><small>Flipkart / Meesho / Snapdeal payment report</small></span>
+        </div>
+        <input id="pay-file" type="file" accept=".xlsx" style="display:none" />
+      </label>
+      <button type="submit" class="btn" id="pay-btn">Upload &amp; Reconcile</button>
+    </form>
+    <div class="result" id="pay-result" hidden></div>
+  </section>
+
+  <!-- ==================== REPORT ==================== -->
+  <section class="panel" id="pay-report-panel">
+    <div class="panel-head"><h2 class="serif">Settlement Report</h2><span class="chip" id="pay-period">all imported data</span></div>
+    <p class="panel-sub">"Amount Received" sirf un lines se banta hai jo khud bank-credit record hain (NEFT/UTR/Final Settlement) — GST/fee breakdown sheets sirf explain karti hain, dobara nahi judti (double-count nahi hota).</p>
+    <div class="kpis kpis-2" style="margin-bottom:14px">
+      <div class="kpi">
+        <div class="kpi-label">Amount Received</div>
+        <div class="kpi-value" id="pay-received">—</div>
+        <div class="kpi-sub">bank-record based</div>
+      </div>
+      <div class="kpi kpi-warn">
+        <div class="kpi-label">Unmatched Order-Payment Rows</div>
+        <div class="kpi-value" id="pay-unmatched">—</div>
+        <div class="kpi-sub">is order abhi system me nahi mila</div>
+      </div>
+    </div>
+    <div class="tablewrap"><table class="ftable" id="pay-breakdown">
+      <thead><tr><th>Marketplace</th><th>Type</th><th>Rows</th><th style="text-align:right">Total</th><th>Counts as Received?</th></tr></thead>
+      <tbody><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ==================== IMPORT HISTORY ==================== -->
+  <section class="panel" id="pay-history-panel">
+    <div class="panel-head"><h2 class="serif">Import History</h2><span class="chip chip-dim" id="pay-history-count">0</span></div>
+    <p class="panel-sub">Dobara wahi file upload karna hamesha safe hai — purana import replace ho jaata hai, duplicate nahi banta.</p>
+    <div class="tablewrap"><table class="ftable" id="pay-history">
+      <thead><tr><th>Marketplace</th><th>Store</th><th>File</th><th>Period</th><th>Rows</th><th>Matched</th><th>Unmatched</th><th>Imported</th><th></th></tr></thead>
+      <tbody><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+</main>
+
+<script src="/payments.js"></script>
+<script src="/modal.js"></script>
+<script src="/nav.js"></script>
+</body>
+</html>

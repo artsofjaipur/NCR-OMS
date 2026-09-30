@@ -1,4 +1,19 @@
-/* NCR-OMS dashboard — same luxe tokens as auth pages, workspace layout. */
+/* NCR-OMS dashboard — same luxe tokens as auth pages, workspace layout.
+ *
+ * THEMES — added by Claude (Anthropic) 2026-09-25, user request: "4-5 theme
+ * bhi add karo jisse acha professional ban jaye." Five selectable content
+ * themes (default "Midnight Gold" plus 4 more), switched via
+ * document.documentElement[data-theme="..."] (public/nav.js's theme
+ * picker, persisted in localStorage as "ncr_theme" — a per-viewer display
+ * preference, not shared data). Deliberately scoped to the CONTENT area
+ * only (this file + finance.css, both fully var-driven) — the left
+ * sidebar (nav.css, .nav-side) keeps its own fixed dark-navy chrome across
+ * every theme, same pattern as Notion/Linear/Vercel-style dashboards: a
+ * constant navigation rail, a themeable canvas. --overlay-1/2/3 replace
+ * what used to be hardcoded rgba(255,255,255,...) fills (ghost buttons,
+ * row hover, modal tints) so those adapt correctly under the one light
+ * theme (Daylight) instead of nearly disappearing against a white card.
+ */
 
 :root {
   --bg: #07090c;
@@ -15,16 +30,113 @@
   --violet: #b7a5e8;
   --orange: #f0965a;
   --red: #e5697a;
+  --glow1: rgba(183, 165, 232, 0.07);
+  --glow2: rgba(216, 180, 92, 0.08);
+  --overlay-1: rgba(255, 255, 255, 0.025);
+  --overlay-2: rgba(255, 255, 255, 0.055);
+  --overlay-3: rgba(255, 255, 255, 0.095);
   --serif: "Playfair Display", Georgia, serif;
   --sans: "Inter", system-ui, sans-serif;
+}
+
+/* ---- Slate Indigo — dark navy-slate, indigo/blue accent (corporate) ---- */
+:root[data-theme="slate-indigo"] {
+  --bg: #080b12;
+  --bg2: #0c1019;
+  --card: #111826;
+  --card2: #161f30;
+  --line: rgba(255, 255, 255, 0.08);
+  --line2: rgba(255, 255, 255, 0.15);
+  --text: #eef2fa;
+  --muted: #95a1b8;
+  --gold: #7c93f0;
+  --gold2: #5f74d1;
+  --green: #3fb88a;
+  --violet: #8aa0f2;
+  --orange: #e79a5c;
+  --red: #e6707f;
+  --glow1: rgba(124, 147, 240, 0.09);
+  --glow2: rgba(90, 60, 200, 0.06);
+  --overlay-1: rgba(255, 255, 255, 0.025);
+  --overlay-2: rgba(255, 255, 255, 0.055);
+  --overlay-3: rgba(255, 255, 255, 0.095);
+}
+
+/* ---- Emerald Noir — near-black, emerald accent (premium/finance) ---- */
+:root[data-theme="emerald-noir"] {
+  --bg: #060807;
+  --bg2: #0a0d0b;
+  --card: #0f1512;
+  --card2: #131b17;
+  --line: rgba(255, 255, 255, 0.07);
+  --line2: rgba(255, 255, 255, 0.13);
+  --text: #eaf1ec;
+  --muted: #93a89c;
+  --gold: #3fbf82;
+  --gold2: #2f9c68;
+  --green: #46b98a;
+  --violet: #9fd9bd;
+  --orange: #e0a05c;
+  --red: #e2697a;
+  --glow1: rgba(63, 191, 130, 0.08);
+  --glow2: rgba(20, 120, 80, 0.07);
+  --overlay-1: rgba(255, 255, 255, 0.02);
+  --overlay-2: rgba(255, 255, 255, 0.05);
+  --overlay-3: rgba(255, 255, 255, 0.09);
+}
+
+/* ---- Graphite Rose — dark graphite, warm rose/copper accent ---- */
+:root[data-theme="graphite-rose"] {
+  --bg: #0c0a0a;
+  --bg2: #100d0d;
+  --card: #171212;
+  --card2: #1c1616;
+  --line: rgba(255, 255, 255, 0.08);
+  --line2: rgba(255, 255, 255, 0.14);
+  --text: #f2ecec;
+  --muted: #a89494;
+  --gold: #d98a7a;
+  --gold2: #b96e60;
+  --green: #4fae86;
+  --violet: #cba0c9;
+  --orange: #e2925c;
+  --red: #e26a7a;
+  --glow1: rgba(217, 138, 122, 0.08);
+  --glow2: rgba(180, 110, 90, 0.06);
+  --overlay-1: rgba(255, 255, 255, 0.025);
+  --overlay-2: rgba(255, 255, 255, 0.055);
+  --overlay-3: rgba(255, 255, 255, 0.095);
+}
+
+/* ---- Daylight — light, for a bright warehouse-floor screen ---- */
+:root[data-theme="daylight"] {
+  --bg: #f5f3ee;
+  --bg2: #efece5;
+  --card: #ffffff;
+  --card2: #faf8f4;
+  --line: rgba(20, 20, 20, 0.1);
+  --line2: rgba(20, 20, 20, 0.18);
+  --text: #20242c;
+  --muted: #5c6472;
+  --gold: #a9832f;
+  --gold2: #8c6c26;
+  --green: #1f8f63;
+  --violet: #6a54ad;
+  --orange: #c06a26;
+  --red: #c23b4d;
+  --glow1: rgba(169, 131, 47, 0.05);
+  --glow2: rgba(90, 70, 170, 0.045);
+  --overlay-1: rgba(20, 20, 20, 0.03);
+  --overlay-2: rgba(20, 20, 20, 0.055);
+  --overlay-3: rgba(20, 20, 20, 0.09);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
   background:
-    radial-gradient(1200px 500px at 85% -10%, rgba(183, 165, 232, 0.07), transparent 60%),
-    radial-gradient(900px 420px at 0% 0%, rgba(216, 180, 92, 0.08), transparent 55%),
+    radial-gradient(1200px 500px at 85% -10%, var(--glow1), transparent 60%),
+    radial-gradient(900px 420px at 0% 0%, var(--glow2), transparent 55%),
     var(--bg);
   color: var(--text);
   font-family: var(--sans);
@@ -46,11 +158,39 @@ body {
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
 }
-.tb-left { display: flex; align-items: center; gap: 12px; }
+.tb-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .tb-logo { width: 34px; height: 34px; object-fit: contain; }
 .tb-name { font-size: 19px; font-weight: 700; letter-spacing: 0.5px; }
 .tb-name span { color: var(--gold); }
 .tb-right { display: flex; align-items: center; gap: 14px; }
+
+/* ---------- live analog clock + date (topbar) — Claude (Anthropic) 2026-09-11 ---------- */
+.tb-clock {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 3px 10px 3px 3px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(216, 180, 92, 0.05);
+}
+.tb-clock-face { width: 30px; height: 30px; flex: none; }
+.tb-clock-ring { fill: rgba(11, 14, 19, 0.9); stroke: var(--gold2); stroke-width: 3; }
+.tb-clock-ticks line { stroke: rgba(216, 180, 92, 0.55); stroke-width: 2; stroke-linecap: round; }
+.tb-clock-hand { stroke-linecap: round; transform-origin: 50px 50px; }
+.tb-clock-hour { stroke: var(--text); stroke-width: 4.5; }
+.tb-clock-min { stroke: var(--text); stroke-width: 3.2; }
+.tb-clock-sec { stroke: var(--gold); stroke-width: 1.6; }
+.tb-clock-pin { fill: var(--gold); }
+.tb-clock-text { display: flex; flex-direction: column; line-height: 1.25; }
+.tb-clock-time { font-size: 13px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.tb-clock-date { font-size: 10px; color: var(--muted); letter-spacing: 0.3px; }
+@media (max-width: 640px) {
+  .tb-clock { padding: 2px 8px 2px 2px; }
+  .tb-clock-face { width: 26px; height: 26px; }
+  .tb-clock-time { font-size: 11.5px; }
+  .tb-clock-date { font-size: 9px; }
+}
 .tb-company { font-size: 13px; color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-role {
   font-size: 10px; letter-spacing: 1.5px; padding: 4px 10px;
@@ -96,6 +236,54 @@ body {
 .dot-live { background: var(--green); animation: pulse 1.8s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
+/* ---------- Daily Summary dashboard (public/app.js: loadDailySummary) ---------- */
+.ds-totals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.ds-tile {
+  background: linear-gradient(160deg, var(--card2), var(--card));
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px 12px;
+}
+.ds-tile-label { font-size: 10px; letter-spacing: 1.2px; color: var(--muted); text-transform: uppercase; }
+.ds-tile-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 6px 0 0;
+  transition: color 0.15s;
+}
+.ds-tile-btn:hover { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
+.ds-tile-btn:disabled { cursor: default; color: var(--muted); }
+.ds-tile-btn:disabled:hover { text-decoration: none; }
+.ds-sub { margin-top: 20px; }
+.ds-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  font-weight: 600;
+}
+.ds-link:hover { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
+.ds-link:disabled { cursor: default; color: inherit; text-decoration: none; }
+@media (max-width: 900px) {
+  .ds-totals { grid-template-columns: repeat(2, 1fr); }
+}
+
 .grid {
   display: grid;
   grid-template-columns: 1.15fr 1fr;
@@ -109,6 +297,10 @@ body {
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 22px;
+  min-width: 0; /* grid items default to min-width:auto (their content's
+    min-content size), which let long panel-sub text push .upload-panel
+    wider than the viewport instead of wrapping — found on phone width
+    while testing the Company Profile change. Claude (Anthropic) 2026-09-11. */
   transition: border-color 0.3s;
 }
 .panel:hover { border-color: var(--line2); }
@@ -122,6 +314,38 @@ body {
   border: 1px solid rgba(216, 180, 92, 0.4); padding: 4px 10px; border-radius: 999px;
 }
 .chip-dim { color: var(--muted); border-color: var(--line2); }
+
+/* ---------- company profile: one-line summary + expand — Claude (Anthropic) 2026-09-11 ---------- */
+.cp-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  transition: border-color 0.2s, background 0.2s;
+}
+.cp-summary-row:hover { border-color: var(--gold2); background: rgba(216, 180, 92, 0.05); }
+.cp-summary-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cp-summary-text b { font-family: var(--serif); font-size: 16px; }
+.cp-summary-text .small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-summary-cta { font-size: 12px; font-weight: 600; color: var(--gold); flex: none; }
+.cp-summary-row[aria-expanded="true"] .cp-summary-cta::after { content: ""; }
+
+.cp-danger { border: 1px solid rgba(229, 105, 122, 0.3); border-radius: 12px; padding: 14px 16px !important; margin-top: 6px; }
+
+/* Grid items default to min-width:auto (their content's min-content size),
+   which lets a long email/name row silently push the whole panel wider
+   than the viewport instead of wrapping. Found while testing the "Who Can
+   Access This Company" block — Claude (Anthropic) 2026-09-11. */
+#cp-access-list, #cp-danger-block { min-width: 0; }
 
 /* ---------- upload form ---------- */
 .form-row { margin-bottom: 14px; }
@@ -193,6 +417,16 @@ select:focus { border-color: var(--gold2); }
 }
 .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(216, 180, 92, 0.25); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-ghost {
+  width: auto;
+  background: var(--overlay-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+.btn-ghost:hover:not(:disabled) { background: var(--overlay-3); box-shadow: none; }
+.btn-sm { width: auto; padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+.btn-danger { background: linear-gradient(135deg, #e5697a, #c8465a); color: #fff; }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .btn .spin { display: none; }
 .btn.loading .spin {
   display: inline-block;
@@ -275,6 +509,13 @@ select:focus { border-color: var(--gold2); }
 
 /* ---------- brands ---------- */
 .brand-list { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 4px; }
+.bm-card {
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.bm-card .pill { margin-left: 6px; }
 .brand-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   background: var(--bg2);
@@ -300,7 +541,7 @@ th {
 td { padding: 11px 12px; border-bottom: 1px solid var(--line); }
 tr:last-child td { border-bottom: none; }
 tbody tr { transition: background 0.15s; }
-tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
+tbody tr:hover { background: var(--overlay-1); }
 .status {
   font-size: 10.5px; letter-spacing: 0.8px; padding: 3px 10px; border-radius: 999px; white-space: nowrap;
 }
@@ -310,6 +551,21 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
 .st-DELIVERED { background: rgba(70, 185, 138, 0.14); color: var(--green); }
 .st-CANCELLED, .st-RTO_INITIATED { background: rgba(229, 105, 122, 0.14); color: var(--red); }
 .st-ON_HOLD { background: rgba(240, 150, 90, 0.14); color: var(--orange); }
+/* Return badges -- "return upcoming" (INITIATED/IN_TRANSIT) through to
+   RESTOCKED/CLOSED. Separate palette from order status so the two never
+   get visually confused in the Orders table. */
+.ret-INITIATED, .ret-IN_TRANSIT { background: rgba(216, 180, 92, 0.14); color: var(--gold); }
+.ret-RECEIVED { background: rgba(183, 165, 232, 0.14); color: var(--violet); }
+.ret-QC_PASSED, .ret-RESTOCKED, .ret-CLOSED { background: rgba(70, 185, 138, 0.14); color: var(--green); }
+.ret-QC_FAILED { background: rgba(229, 105, 122, 0.14); color: var(--red); }
+/* Packed badge -- the Scan Station's mark, surfaced back on the Orders
+   page (user request: "scan ho gaya to order page par bhi mark hona
+   chahiye"). Separate from order status: a shipment can be packed while
+   the order itself is still CREATED/READY_TO_DISPATCH. */
+.pk-yes { background: rgba(70, 185, 138, 0.14); color: var(--green); }
+.pk-no { color: var(--muted); }
+.ret-link { background: none; border: none; padding: 0; font: inherit; cursor: pointer; }
+.ret-link:hover .status { filter: brightness(1.15); }
 .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 28px 0 12px; }
 
 /* ---------- responsive ---------- */
@@ -323,3 +579,147 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
   .tb-company { display: none; }
   .shell { padding: 18px 14px 40px; }
 }
+
+/* =====================================================================
+   Modal / dialog box — shared across every page (app.css loads
+   everywhere), paired with public/modal.js (window.NcrModal.open).
+   Company & Setup, Party Master, Single Entry and Team & Roles use this
+   for "add / edit one thing" flows instead of inline accordions or
+   expanding table rows. Claude (Anthropic) 2026-09-19, per user request:
+   "jaha dilogbox se kam ho jaye vaha dilogbox se kaam me lo lekin
+   attractive banao."
+   ===================================================================== */
+.ncr-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 6, 9, 0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 500;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+.ncr-modal-backdrop.open { opacity: 1; }
+.ncr-modal-backdrop.closing { opacity: 0; }
+.ncr-modal-box {
+  width: 100%;
+  max-width: 460px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: linear-gradient(165deg, var(--card2), var(--card));
+  border: 1px solid var(--line2);
+  border-radius: 18px;
+  padding: 22px 24px 26px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55), 0 2px 0 rgba(216, 180, 92, 0.06) inset;
+  transform: translateY(14px) scale(0.97);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ncr-modal-backdrop.open .ncr-modal-box { transform: translateY(0) scale(1); }
+.ncr-modal-wide { max-width: 760px; }
+.ncr-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ncr-modal-head h3 { font-size: 18px; font-weight: 700; }
+.ncr-modal-close {
+  flex: none;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--overlay-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.ncr-modal-close:hover { color: var(--text); background: var(--overlay-3); border-color: var(--line2); }
+.ncr-modal-body .fgrid, .ncr-modal-body .form-row { margin-top: 0; }
+body.ncr-modal-open { overflow: hidden; }
+
+/* ---------- small polish: list rows / icon buttons used by the modal-
+   driven pages, kept generic enough for any panel ---------- */
+.list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--overlay-1);
+  transition: border-color 0.15s, background 0.15s;
+}
+.list-row:hover { border-color: var(--line2); background: var(--overlay-2); }
+.list-row + .list-row { margin-top: 8px; }
+.list-row-main { min-width: 0; }
+.list-row-title { font-weight: 600; font-size: 14px; }
+.list-row-sub { font-size: 12px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.list-row-actions { display: flex; gap: 6px; flex: none; }
+.section-head-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 30px 16px;
+  border: 1px dashed var(--line2);
+  border-radius: 14px;
+}
+
+/* ---------- entry-card grid (Single Entry page action cards, each opens a
+   modal) — Claude (Anthropic) 2026-09-19 ---------- */
+.entry-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+.entry-card {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--overlay-1);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  transition: border-color 0.18s, background 0.18s, transform 0.18s, box-shadow 0.18s;
+}
+.entry-card:hover {
+  border-color: var(--gold2);
+  background: rgba(216, 180, 92, 0.06);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
+}
+.entry-card-ico {
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 11px;
+  background: linear-gradient(135deg, var(--gold), var(--gold2));
+  color: #17130a;
+  font-size: 18px; font-weight: 700;
+}
+.entry-card-title { font-family: var(--serif); font-size: 16px; font-weight: 700; }
+.entry-card-sub { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+/* ---------- session log rows (Single Entry "This Session" list) ---------- */
+.log-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px;
+}
+.log-row + .log-row { margin-top: 6px; }
+.log-row .log-time { color: var(--muted); font-size: 11px; flex: none; }

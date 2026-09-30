@@ -77,6 +77,13 @@ export const companies = pgTable("companies", {
   gstin: varchar("gstin", { length: 15 }),
   pan: varchar("pan", { length: 10 }),
   cin: varchar("cin", { length: 21 }),
+  // Invoice/order reference prefix per company (e.g. "PO NO.", "RF NO.", "RG NO.")
+  orderReferencePrefix: varchar("order_reference_prefix", { length: 20 }),
+  // Export registration + contact details (company setup, 2026-09-10)
+  iec: varchar("iec", { length: 20 }),
+  phone: varchar("phone", { length: 20 }),
+  whatsapp: varchar("whatsapp", { length: 20 }),
+  email: varchar("email", { length: 255 }),
   addressLine1: varchar("address_line1", { length: 200 }),
   addressLine2: varchar("address_line2", { length: 200 }),
   city: varchar("city", { length: 100 }),
@@ -100,6 +107,8 @@ export const bankAccounts = pgTable("bank_accounts", {
   ifsc: varchar("ifsc", { length: 11 }).notNull(),
   bankName: varchar("bank_name", { length: 150 }).notNull(),
   branchName: varchar("branch_name", { length: 150 }),
+  // AD Code for export/remittance (printed on invoices), 2026-09-10
+  adCode: varchar("ad_code", { length: 30 }),
   accountType: varchar("account_type", { length: 30 }).default("CURRENT"),
   isPrimary: boolean("is_primary").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -351,6 +360,17 @@ export const returns = pgTable("returns", {
   orderId: integer("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
   orderItemId: integer("order_item_id").references(() => orderItems.id),
   status: returnStatusEnum("status").notNull().default("INITIATED"),
+  // Marketplace-reported classification, captured from the return-sheet CSV
+  // (e.g. Flipkart/Meesho "Return Type" column: "Customer Return" vs "RTO" —
+  // an RTO never left the customer's hands and should never be QC'd for
+  // damage the same way a worn/returned customer item would be). Free-text
+  // because marketplaces don't share a fixed vocabulary; NULL when the sheet
+  // didn't carry a recognizable value.
+  returnType: varchar("return_type", { length: 40 }),
+  // The marketplace's own return/RTO reason text (e.g. "Size issue", "Order
+  // cancelled by buyer", "Undelivered — customer unreachable"). Distinct from
+  // qcNotes, which is our own warehouse QC finding recorded later.
+  reason: text("reason"),
   reverseAwb: varchar("reverse_awb", { length: 100 }),
   reverseCarrier: varchar("reverse_carrier", { length: 100 }),
   initiatedAt: timestamp("initiated_at", { withTimezone: true }),
@@ -407,6 +427,106 @@ export const expenses = pgTable("expenses", {
 });
 
 // ---------------------------------------------------------------------------
+// Marketplace Settlement / Payment-sheet Imports
+// ---------------------------------------------------------------------------
+// Added by Claude (Anthropic) 2026-09-25, per user request (Hinglish): upload
+// a marketplace payment/settlement report (Flipkart, Meesho, Snapdeal — each
+// a multi-tab .xlsx with a completely different layout) and have it
+// auto-reconcile against orders, with every fee/deduction visible against the
+// order it belongs to, plus a full report. Deliberately additive/generic
+// rather than a bespoke table per marketplace: `settlementEntries` stores one
+// row per source spreadsheet row (across every recognized tab), tagged by
+// `lineType` (which tab it came from) and carrying the FULL original row in
+// `raw` jsonb — so nothing from the sheet is silently dropped even where a
+// column doesn't map to a typed field, and the order-detail drill-down can
+// render "everything" for an order without a bespoke UI per fee column.
+// See BRAIN.md pt.11 for the full design writeup and disclosed assumptions.
+
+export const settlementLineTypeEnum = pgEnum("settlement_line_type", [
+  "ORDER_PAYMENT", // per-order/line-item settlement (Flipkart "Orders", Meesho "Order Payments", Snapdeal "Total_Suborders")
+  "RETURN", // Snapdeal "Returns" — reversal of an earlier order-level settlement
+  "FEE_REBATE", // Flipkart "MP Fee Rebate"
+  "NON_ORDER_CLAIM", // Flipkart "Non_Order_SPF" (lost/damaged-in-warehouse claims), not tied to a live order
+  "STORAGE_RECALL", // Flipkart "Storage_Recall"
+  "ADS", // Flipkart "Ads", Meesho "Ads Cost"
+  "TDS", // Flipkart "TDS", embedded per-row in Snapdeal/Meesho order sheets too
+  "TCS", // Flipkart "TCS_Recovery", Snapdeal "TCS"
+  "GST_DETAIL", // Flipkart "GST_Details" — fee-level GST breakdown, informational only (do not sum into bank totals: it re-explains fees already counted in ORDER_PAYMENT/ADS/etc, see settlements module comment)
+  "COMMISSION_FEES", // Snapdeal "Commission and other charges"
+  "NON_ORDER_TXN", // Snapdeal "Non Order Transactions"
+  "CLOSING_BALANCE", // Snapdeal "ClosingBalance"
+  "REFERRAL", // Meesho "Referral Payments"
+  "COMPENSATION_RECOVERY", // Meesho "Compensation and Recovery"
+  "BANK_PAYMENT", // Snapdeal "Payments" — the literal bank-credit record (UTR-keyed)
+]);
+
+export const settlementImports = pgTable("settlement_imports", {
+  id: serial("id").primaryKey(),
+  marketplaceAccountId: integer("marketplace_account_id").notNull().references(() => marketplaceAccounts.id),
+  marketplace: marketplaceEnum("marketplace").notNull(),
+  sourceFileName: varchar("source_file_name", { length: 300 }).notNull(),
+  periodStart: timestamp("period_start", { withTimezone: true }),
+  periodEnd: timestamp("period_end", { withTimezone: true }),
+  entryCount: integer("entry_count").notNull().default(0),
+  matchedCount: integer("matched_count").notNull().default(0),
+  unmatchedCount: integer("unmatched_count").notNull().default(0),
+  importedByUserId: integer("imported_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const settlementEntries = pgTable(
+  "settlement_entries",
+  {
+    id: serial("id").primaryKey(),
+    settlementImportId: integer("settlement_import_id").notNull().references(() => settlementImports.id, { onDelete: "cascade" }),
+    marketplaceAccountId: integer("marketplace_account_id").notNull().references(() => marketplaceAccounts.id),
+    lineType: settlementLineTypeEnum("line_type").notNull(),
+    // Populated when this row could be matched to a live order (most
+    // ORDER_PAYMENT/RETURN/FEE_REBATE rows; occasionally a GST_Detail row).
+    // Left null for genuinely non-order rows (Ads, TDS-at-account-level,
+    // Storage, bank Payments, etc.) — these still count toward the report,
+    // just not toward any single order's drill-down.
+    orderId: integer("order_id").references(() => orders.id, { onDelete: "set null" }),
+    orderItemId: integer("order_item_id").references(() => orderItems.id, { onDelete: "set null" }),
+    // Raw order/sub-order id string as it appeared in the sheet, kept even
+    // when matching failed, so an unmatched row can still be shown to the
+    // user with *something* to search/recognize it by.
+    marketplaceOrderIdRaw: varchar("marketplace_order_id_raw", { length: 100 }),
+    reference: varchar("reference", { length: 150 }), // NEFT ID / UTR No / Transaction ID / Campaign ID — whichever this sheet uses
+    occurredAt: timestamp("occurred_at", { withTimezone: true }), // payment/transaction date for this row
+    // The single most representative money figure for this row (see the
+    // per-sheet column map in src/ingestion/parsers/settlements/*.ts) — sign
+    // preserved (negative = deduction). NOT safe to blindly SUM across every
+    // lineType for a "net" figure; see `countsAsBankMoney`.
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull().default("0"),
+    // True only for rows from a sheet that is itself a literal bank-credit
+    // record (Flipkart's NEFT-keyed settlement sheets, Meesho's Final
+    // Settlement Amount, Snapdeal's "Payments" UTR sheet) — the only rows
+    // safe to sum for a period's "Amount Received" total without risking
+    // double-counting money that's also explained elsewhere (e.g. GST_Detail
+    // re-states fees already inside ORDER_PAYMENT).
+    countsAsBankMoney: boolean("counts_as_bank_money").notNull().default(false),
+    raw: jsonb("raw").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orderIdx: index("settlement_entries_order_idx").on(t.orderId),
+    importIdx: index("settlement_entries_import_idx").on(t.settlementImportId),
+    typeIdx: index("settlement_entries_type_idx").on(t.lineType),
+  }),
+);
+
+export const settlementImportsRelations = relations(settlementImports, ({ many, one }) => ({
+  entries: many(settlementEntries),
+  marketplaceAccount: one(marketplaceAccounts, { fields: [settlementImports.marketplaceAccountId], references: [marketplaceAccounts.id] }),
+}));
+
+export const settlementEntriesRelations = relations(settlementEntries, ({ one }) => ({
+  import: one(settlementImports, { fields: [settlementEntries.settlementImportId], references: [settlementImports.id] }),
+  order: one(orders, { fields: [settlementEntries.orderId], references: [orders.id] }),
+}));
+
+// ---------------------------------------------------------------------------
 // Purchase Entry & Direct Stock Update, Supplier Master
 // ---------------------------------------------------------------------------
 
@@ -442,6 +562,22 @@ export const purchaseEntries = pgTable("purchase_entries", {
   totalAmount: numeric("total_amount", { precision: 12, scale: 2 }),
   dueDate: timestamp("due_date", { withTimezone: true }),
   notes: text("notes"),
+  // Stock-In ledger fields — added 2026-09-25 per user request to track
+  // party-wise "Stock In" sheets (challan-wise goods receipt, GST, bill and
+  // payment tracking) as full CRUD entries, not just a fire-and-forget
+  // receipt. `entryDate` is the real-world date goods came in (what the
+  // party's sheet calls "In Date") — kept separate from `createdAt` (system
+  // insert time) since historical sheets are imported long after the fact
+  // and every date/balance/report must be computed off the real date.
+  entryDate: timestamp("entry_date", { withTimezone: true }),
+  partyChalanNo: varchar("party_chalan_no", { length: 100 }),
+  ourChalanNo: varchar("our_chalan_no", { length: 100 }),
+  gstPercent: numeric("gst_percent", { precision: 5, scale: 2 }),
+  // subtotal = qty*rate (pre-GST); totalAmount above stays the final payable
+  // (subtotal + gst) so existing Finance/Reports/Assistant queries that sum
+  // totalAmount as "what's owed" keep working unchanged.
+  subtotalAmount: numeric("subtotal_amount", { precision: 12, scale: 2 }),
+  gstAmount: numeric("gst_amount", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

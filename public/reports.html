@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<script>try{var t=localStorage.getItem("ncr_theme");if(t&&t!=="midnight-gold")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Reports — NCR-OMS</title>
 <link rel="icon" href="/brand/vardhamiti.svg" />
@@ -58,6 +59,7 @@
   <div class="tabs" role="tablist">
     <button type="button" class="sel" data-tab="pnl">📉 Profit &amp; Loss</button>
     <button type="button" data-tab="turnover">🔄 Turnover</button>
+    <button type="button" data-tab="products">🏷️ Products</button>
     <button type="button" data-tab="balance">⚖ Balance Sheet</button>
     <button type="button" data-tab="expenses">🧮 Expenses</button>
     <button type="button" data-tab="fees">🏪 Store Fees</button>
@@ -90,6 +92,35 @@
           <tbody></tbody></table></div>
       </section>
     </div>
+  </section>
+
+  <!-- ============ PRODUCTS ============
+       Added by Claude (Anthropic) 2026-09-25, user request (Hinglish): "ek
+       konsa sku sabse jyada sale hora pata nahi chal raha / konsi size
+       sabse jyada sale hori / konse store par order aara konse sku me size
+       me abhi system nahi bana sayd." Same period as Turnover. -->
+  <section class="panel" id="tab-products" hidden>
+    <div class="panel-head"><h2 class="serif">Products — top sellers</h2><span class="chip" id="pr-period">—</span></div>
+    <p class="panel-sub">Konsa SKU aur konsi size sabse jyada bik rahi hai, aur konse store par konsa SKU/size chal raha hai.</p>
+    <div class="grid" style="margin-top:6px">
+      <section class="panel"><div class="panel-head"><h2 class="serif" style="font-size:17px">Top SKUs</h2></div>
+        <div class="tablewrap"><table class="ftable" id="pr-skus">
+          <thead><tr><th>SKU</th><th>Product</th><th>Qty Sold</th><th style="text-align:right">Revenue</th></tr></thead>
+          <tbody><tr><td colspan="4" class="empty">Loading…</td></tr></tbody></table></div>
+      </section>
+      <section class="panel"><div class="panel-head"><h2 class="serif" style="font-size:17px">Top Sizes</h2></div>
+        <div class="tablewrap"><table class="ftable" id="pr-sizes">
+          <thead><tr><th>Size</th><th>Qty Sold</th><th style="text-align:right">Revenue</th></tr></thead>
+          <tbody><tr><td colspan="3" class="empty">Loading…</td></tr></tbody></table></div>
+      </section>
+    </div>
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head"><h2 class="serif" style="font-size:17px">Store × SKU × Size</h2></div>
+      <p class="panel-sub small">Har store ke liye uske sabse zyada bikne wale SKU/size combos, qty ke hisab se.</p>
+      <div class="tablewrap"><table class="ftable" id="pr-store-sku-size">
+        <thead><tr><th>Store</th><th>SKU</th><th>Size</th><th>Qty Sold</th><th style="text-align:right">Revenue</th></tr></thead>
+        <tbody><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div>
+    </section>
   </section>
 
   <!-- ============ BALANCE ============ -->

@@ -55,6 +55,8 @@ import { reportsRouter } from "./routes/reports";
 import { entryRouter } from "./routes/entry";
 import { dashboardRouter } from "./routes/dashboard";
 import { assistantRouter } from "./routes/assistant";
+import { settlementsRouter } from "./routes/settlements";
+import { inventoryRouter } from "./routes/inventory";
 
 import {
   errorHandler,
@@ -68,11 +70,41 @@ export function createApp(): Express {
   app.set("trust proxy", 1);
 
   // Body Parsers
-  app.use(express.json({ limit: "10mb" }));
+  // Bumped from 10mb -> 40mb by Claude (Anthropic) 2026-09-25: settlement
+  // sheet imports (POST /settlements/import) send a base64-encoded .xlsx in
+  // the JSON body, same "read client-side, POST as JSON" convention the CSV
+  // importers already use — base64 inflates size ~33%, so a 25MB source
+  // file (the route's own hard cap) needs ~34MB of body room.
+  app.use(express.json({ limit: "40mb" }));
   app.use(express.urlencoded({ extended: true }));
 
   // Security Headers
-  app.use(helmet());
+  // connect-src includes docs.google.com so the Import-from-Google-Sheet
+  // panel can fetch the sheet's CSV export straight from the user's browser
+  // (its first-choice path; the server-side fetch remains the fallback).
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+          "connect-src": ["'self'", "https://docs.google.com"],
+          // Allows exactly one small inline snippet (byte-identical on every
+          // authed page, see public/*.html): restores the saved content
+          // theme onto <html data-theme> before app.css/nav.js even load,
+          // so there's no flash of the default theme on page load. Added by
+          // Claude (Anthropic) 2026-09-25 alongside the theme picker
+          // (public/nav.js) -- found via real browser testing that the
+          // default helmet CSP (script-src 'self') silently blocks ANY
+          // inline <script>, so this hash-allowlists that one exact
+          // snippet rather than weakening the policy with 'unsafe-inline'.
+          // If that snippet's text ever changes, this hash must be
+          // recomputed (sha256, base64) or the snippet silently stops
+          // running again.
+          "script-src": ["'self'", "'sha256-6v4qHajW8nxkM7PQiEGo2CMYjPMg1zgru00x5p7rfAM='"],
+        },
+      },
+    })
+  );
 
   // CORS Configuration
   const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
@@ -143,6 +175,60 @@ export function createApp(): Express {
   app.get("/reports", (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, "reports.html"));
   });
+  // Company & Setup / Party Master / Single Entry / Team & Roles — split out
+  // of /app's in-page anchors into real standalone pages by Claude
+  // (Anthropic) 2026-09-11, per user request. See BRAIN.md.
+  app.get("/setup", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "setup.html"));
+  });
+  app.get("/party", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "party.html"));
+  });
+  app.get("/entry", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "entry.html"));
+  });
+  app.get("/team", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "team.html"));
+  });
+  // Returns Tracking: "Upcoming Returns / Pending" + "Expected vs Received"
+  // — added 2026-09-25 per user request. Safe to claim the bare path: the
+  // returns API's own GET "/" (the raw returns list) has no frontend caller
+  // today (confirmed via grep) and stays reachable at /api/returns; every
+  // page under this router only ever calls a nested path (/returns/import,
+  // /returns/scan, /returns/tracking), same pattern as /reports.
+  app.get("/returns", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "returns.html"));
+  });
+  // Orders list (search/filter/edit/cancel/delete) — split out of /app's
+  // KPI+Daily-Summary dashboard into its own page 2026-09-25, per user
+  // request (Hinglish): "dusra summery desboard par hai jo sahi hai lekin
+  // order page bhi vahi par ahi dono ko alag alag kaam hai to usi hisab se
+  // karo" — dashboard summary and the order list are different jobs and
+  // shouldn't share one page. UNLIKE /returns above, this one bare path
+  // genuinely collides: ordersRouter's own GET "/" *is* the live order
+  // list, and public/app.js (now orders.js) called it at the bare path.
+  // Fixed the collision at the call site instead of avoiding the URL —
+  // orders.js now calls /api/orders explicitly (the /api-prefixed mount
+  // always reaches the router regardless of any page route sitting on the
+  // bare path, per the routeMounts loop below) — so this page route is
+  // safe to register.
+  app.get("/orders", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "orders.html"));
+  });
+  // Marketplace payment/settlement-sheet reconciliation — added 2026-09-25.
+  // Bare path is safe to claim here: settlementsRouter's own GET "/" (the
+  // import history list) has no frontend caller at the bare path — every
+  // call site uses /api/settlements/... explicitly (see public/payments.js).
+  app.get("/payments", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "payments.html"));
+  });
+  // Inventory / Stock report (SKU × size × product) — added 2026-09-25 per
+  // user request. Bare path is safe to claim: inventoryRouter's own data
+  // endpoints live under /inventory/stock and /inventory/stock/summary, not
+  // the bare path, so there's no collision (same pattern as /payments).
+  app.get("/inventory", (_req: Request, res: Response) => {
+    res.sendFile(path.join(PUBLIC_DIR, "inventory.html"));
+  });
 
   // API Routes
   // Fixed by Claude (Anthropic): mounted at both the bare path and the
@@ -168,6 +254,8 @@ export function createApp(): Express {
     ["/entry", entryRouter],
     ["/dashboard", dashboardRouter],
     ["/assistant", assistantRouter],
+    ["/settlements", settlementsRouter],
+    ["/inventory", inventoryRouter],
   ];
   for (const [path, router] of routeMounts) {
     app.use(path, router);

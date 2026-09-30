@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<script>try{var t=localStorage.getItem("ncr_theme");if(t&&t!=="midnight-gold")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Dashboard — NCR-OMS</title>
 <link rel="icon" href="/brand/vardhamiti.svg" />
@@ -19,10 +20,28 @@
   <div class="tb-left">
     <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
     <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <!-- Live analog clock + date — added by Claude (Anthropic) 2026-09-11.
+         Sits right under/beside the brand mark, stays sticky with the
+         topbar so it's always in view above the Upload Orders panel. -->
+    <div class="tb-clock" id="tb-clock" aria-label="Live clock">
+      <svg viewBox="0 0 100 100" class="tb-clock-face">
+        <circle cx="50" cy="50" r="47" class="tb-clock-ring"></circle>
+        <g class="tb-clock-ticks" id="tb-clock-ticks"></g>
+        <line id="tb-clock-hour" x1="50" y1="50" x2="50" y2="30" class="tb-clock-hand tb-clock-hour"></line>
+        <line id="tb-clock-min" x1="50" y1="50" x2="50" y2="20" class="tb-clock-hand tb-clock-min"></line>
+        <line id="tb-clock-sec" x1="50" y1="50" x2="50" y2="15" class="tb-clock-hand tb-clock-sec"></line>
+        <circle cx="50" cy="50" r="2.6" class="tb-clock-pin"></circle>
+      </svg>
+      <div class="tb-clock-text">
+        <div class="tb-clock-time" id="tb-clock-digital">--:--:--</div>
+        <div class="tb-clock-date" id="tb-clock-date">—</div>
+      </div>
+    </div>
   </div>
   <div class="tb-right">
     <span class="tb-company" id="tb-company"></span>
     <span class="tb-role" id="tb-role"></span>
+    <a href="/orders" class="tb-logout" style="text-decoration:none">🧾 Orders</a>
     <a href="/scan" class="tb-logout" style="text-decoration:none">📦 Scan</a>
     <a href="/finance" class="tb-logout" style="text-decoration:none">💰 Finance</a>
     <a href="/reports" class="tb-logout" style="text-decoration:none">📊 Reports</a>
@@ -58,6 +77,49 @@
       <div class="kpi-label">Total Orders</div>
       <div class="kpi-value" id="kpi-total">—</div>
       <div class="kpi-sub" id="kpi-gmv">GMV —</div>
+    </div>
+  </section>
+
+  <!-- ==================== DAILY SUMMARY DASHBOARD ====================
+       Added by Claude (Anthropic) 2026-09-25 per user's own dashboard spec
+       (Hinglish): OVERALL TOTALS + PLATFORM-WISE BREAKDOWN + DAILY SUMMARY
+       trend, every number clickable to a drill-down list ("link rahe click
+       karne par pata chal jana chahiye ki aaj ye order dispatch huye unki
+       list dikh jaye, ese hi return vali"). See public/app.js
+       (loadDailySummary / openDailySummaryDetail) and BRAIN.md. -->
+  <section class="panel wide" id="daily-summary-panel">
+    <div class="panel-head">
+      <h2 class="serif">Daily Summary</h2>
+      <span class="chip chip-dim">CLICK ANY NUMBER FOR THE LIST</span>
+    </div>
+    <p class="panel-sub small">"Orders Dispatched" = order pack-scanned at the Scan Station. Koi order abhi tak sirf status-edit se "Dispatched" mark hua hai (bina scan ke), wo is count me nahi aayega.</p>
+
+    <div class="ds-totals" id="ds-totals"></div>
+
+    <div class="ds-sub">
+      <div class="panel-head" style="margin-top:6px">
+        <h3 class="serif" style="font-size:15px">Platform-wise Breakdown</h3>
+      </div>
+      <div class="tablewrap">
+        <table id="ds-platform-table">
+          <thead><tr><th>Platform</th><th>Orders Dispatched</th><th>Dispatch Amount (₹)</th><th>Returns Received</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="ds-platform-empty" class="empty" hidden>No dispatched orders or returns yet.</div>
+      </div>
+    </div>
+
+    <div class="ds-sub">
+      <div class="panel-head" style="margin-top:18px">
+        <h3 class="serif" style="font-size:15px">Daily Summary</h3>
+        <span class="chip chip-dim">LAST 30 DAYS</span>
+      </div>
+      <div class="tablewrap">
+        <table id="ds-daily-table">
+          <thead><tr><th>Date</th><th>Orders Dispatched</th><th>Returns Expected</th><th>Returns Received</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -101,6 +163,34 @@
       <div id="upload-result" class="result" hidden></div>
     </section>
 
+    <!-- ==================== UPLOAD AWB / MANIFEST ====================
+         Meesho's order sheet (above) carries no AWB -- it only shows up in
+         Meesho's separate manifest/label export once the shipment is
+         booked, either as a CSV/Excel-style export OR as the real
+         "Supplier Manifest" PDF Meesho actually hands over (added 2026-09-26
+         -- see src/ingestion/meeshoManifestPdf.ts). No account/warehouse
+         picker here on purpose: it matches by order id against whichever
+         company you're currently on, so it works the same regardless of
+         which company is selected. -->
+    <section class="panel upload-panel">
+      <div class="panel-head">
+        <h2 class="serif">Upload AWB / Manifest</h2>
+        <span class="chip chip-dim">MEESHO &amp; OTHERS</span>
+      </div>
+      <p class="panel-sub">Order sheet me AWB nahi aata (Meesho) — jab courier assign ho jaye, uska manifest/AWB export (.csv) YA seedha Meesho ka "Supplier Manifest" (.pdf) yaha daalo. Matches by order no — koi account chunne ki zaroorat nahi.</p>
+
+      <form id="awb-upload-form">
+        <label for="awb-file" class="dropzone" id="awb-dropzone">
+          <input type="file" id="awb-file" accept=".csv,text/csv,.pdf,application/pdf" hidden />
+          <div class="dz-icon">⬆</div>
+          <div class="dz-text"><b id="awb-dz-name">Choose or drop AWB/manifest (.csv or .pdf)</b><span>Order No / Sub Order No + AWB Number columns, or Meesho's Supplier Manifest PDF</span></div>
+        </label>
+        <button id="awb-up-btn" class="btn" type="submit"><span class="spin"></span>Upload AWB List</button>
+      </form>
+
+      <div id="awb-upload-result" class="result" hidden></div>
+    </section>
+
     <!-- ==================== 14-DAY TREND ==================== -->
     <section class="panel">
       <div class="panel-head">
@@ -111,170 +201,20 @@
       <div class="trend-foot" id="trend-foot"></div>
     </section>
 
-    <!-- ==================== BRANDS + SETUP ==================== -->
-    <section class="panel">
-      <div class="panel-head">
-        <h2 class="serif">Brands &amp; Setup</h2>
-        <span class="chip chip-dim" id="brand-count">0</span>
-      </div>
-      <div id="brand-list" class="brand-list"></div>
-      <div id="brand-manage" class="brand-manage" hidden></div>
-      <div class="panel-sub small">New workspace? Add a brand, then attach its marketplace seller account — then CSV uploads can flow. Brand with order history cannot be deleted (rename instead).</div>
-
-      <details class="setup" id="setup-box">
-        <summary>＋ Add brand / seller account</summary>
-        <div class="setup-body">
-          <div class="form-row two">
-            <div>
-              <label for="sb-brand-name">BRAND NAME</label>
-              <input type="text" id="sb-brand-name" placeholder="e.g. Vardhamiti" />
-            </div>
-            <div style="display:flex; align-items:flex-end">
-              <button type="button" id="sb-brand-btn" class="btn small">Add Brand</button>
-            </div>
-          </div>
-          <div class="form-row two">
-            <div>
-              <label for="sb-brand">EXISTING BRAND</label>
-              <select id="sb-brand"><option value="">—</option></select>
-            </div>
-            <div>
-              <label for="sb-mp">MARKETPLACE</label>
-              <select id="sb-mp">
-                <option value="FLIPKART">Flipkart</option>
-                <option value="MEESHO">Meesho</option>
-                <option value="SNAPDEAL">Snapdeal</option>
-                <option value="AMAZON_IN">Amazon IN</option>
-                <option value="MYNTRA">Myntra</option>
-                <option value="AJIO">AJIO</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <label for="sb-label">SELLER ACCOUNT LABEL</label>
-            <input type="text" id="sb-label" placeholder="e.g. Vardhamiti Official" />
-          </div>
-          <button type="button" id="sb-account-btn" class="btn ghostbtn2">Attach Seller Account</button>
-
-          <div class="form-row" style="margin-top:18px">
-            <label for="sup-name">PARTY / SUPPLIER (STOCK SOURCE)</label>
-            <div class="form-row two" style="margin-bottom:10px">
-              <input type="text" id="sup-name" placeholder="Party name, e.g. Shree Textiles" />
-              <div style="display:flex;align-items:flex-end">
-                <button type="button" id="sup-add-btn" class="btn ghostbtn2">Add Party</button>
-              </div>
-            </div>
-            <select id="sup-list"><option value="">Loading parties…</option></select>
-          </div>
-
-          <div class="form-row two">
-            <div>
-              <label for="pi-sku">STOCK IN — SKU</label>
-              <select id="pi-sku"><option value="">Loading SKUs…</option></select>
-            </div>
-            <div>
-              <label for="pi-qty">QTY RECEIVED</label>
-              <input type="number" id="pi-qty" min="1" placeholder="e.g. 24" />
-            </div>
-          </div>
-          <div class="form-row two">
-            <div>
-              <label for="pi-cost">UNIT COST (₹)</label>
-              <input type="number" id="pi-cost" min="0" step="0.01" placeholder="e.g. 450.00" />
-            </div>
-            <div>
-              <label for="pi-warehouse">TO WAREHOUSE</label>
-              <select id="pi-warehouse"><option value="">—</option></select>
-            </div>
-          </div>
-          <button type="button" id="pi-btn" class="btn">＋ Stock In (Purchase Bill)</button>
-
-          <div id="setup-result" class="result" hidden></div>
-        </div>
-      </details>
-    </section>
-
-    <!-- ==================== SINGLE ENTRY ==================== -->
-    <section class="panel wide">
-      <div class="panel-head">
-        <h2 class="serif">Single Entry</h2>
-        <span class="chip chip-dim">MANUAL ONE-OFF</span>
-      </div>
-      <p class="panel-sub">Ek-ek entry bina CSV ke — order ya return. Stock, ledger, brand, store — sab auto-connect hota hai.</p>
-      <div class="notes-grid">
-        <form id="so-form" class="fgrid fgrid-tight">
-          <div class="fgrid-title">＋ New Order (single)</div>
-          <label>Store <select id="so-account" required></select></label>
-          <label>Warehouse <select id="so-warehouse" required></select></label>
-          <label>Order ID <input id="so-oid" type="text" required placeholder="MKTP-12345" /></label>
-          <label>SKU (code) <input id="so-sku" type="text" required placeholder="VDM-001" style="text-transform:uppercase" /></label>
-          <label>Size <input id="so-size" type="text" placeholder="XL" /></label>
-          <label>Qty <input id="so-qty" type="number" min="1" value="1" required /></label>
-          <label>Price (₹) <input id="so-price" type="number" min="0" step="0.01" required placeholder="1299.00" /></label>
-          <label>City <input id="so-city" type="text" placeholder="Jaipur" /></label>
-          <button type="submit" class="btn" id="so-btn">Create Order</button>
-        </form>
-        <form id="sr-form" class="fgrid fgrid-tight">
-          <div class="fgrid-title">↩ New Return (single)</div>
-          <label>Order ID <input id="sr-oid" type="text" required placeholder="Order ID jo return hua" /></label>
-          <label>Reverse AWB <input id="sr-awb" type="text" placeholder="optional" /></label>
-          <label>Courier <input id="sr-courier" type="text" placeholder="optional" /></label>
-          <label>Note <input id="sr-note" type="text" placeholder="reason / remark" /></label>
-          <button type="submit" class="btn ghostbtn2" id="sr-btn">Create Return</button>
-          <label style="grid-column:1/-1">Receive return by ID <input id="sr-recv" type="number" min="1" placeholder="return id" /></label>
-          <button type="button" class="btn ghostbtn2" id="sr-recv-btn">Mark Received</button>
-        </form>
-      </div>
-      <div id="entry-result" class="result" hidden></div>
-    </section>
-
-    <!-- ==================== TEAM & PERMISSIONS ==================== -->
-    <section class="panel wide" id="team-panel" hidden>
-      <div class="panel-head">
-        <h2 class="serif">Team &amp; Permissions</h2>
-        <span class="chip chip-dim" id="team-count">0</span>
-      </div>
-      <p class="panel-sub">Owner/Admin decide karenge kis user ko kaunsa section milega. Roles ke defaults bhi hain; per-user overrides neeche.</p>
-      <form id="tu-form" class="fgrid">
-        <label>Name <input id="tu-name" type="text" required placeholder="Ramesh Kumar" /></label>
-        <label>Email <input id="tu-email" type="email" required placeholder="ramesh@company.com" /></label>
-        <label>Password <input id="tu-pass" type="password" required minlength="8" placeholder="min 8 chars" /></label>
-        <label>Role
-          <select id="tu-role">
-            <option value="OPS">OPS (operations)</option>
-            <option value="ADMIN">ADMIN</option>
-            <option value="VIEWER">VIEWER (read-only)</option>
-          </select>
-        </label>
-        <button type="submit" class="btn" id="tu-btn">＋ Add User</button>
-      </form>
-      <div class="tablewrap"><table class="ftable" id="team-table">
-        <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Sections</th><th></th></tr></thead>
-        <tbody><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
-      </table></div>
-    </section>
-
-    <!-- ==================== RECENT ORDERS ==================== -->
-    <section class="panel wide">
-      <div class="panel-head">
-        <h2 class="serif">Recent Orders</h2>
-        <span class="chip chip-dim">LATEST 20</span>
-      </div>
-      <div class="tablewrap">
-        <table id="orders-table">
-          <thead>
-            <tr><th>Order ID</th><th>Marketplace</th><th>Status</th><th>Items</th><th>Ordered</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-        <div id="orders-empty" class="empty">No orders yet — upload your first CSV above.</div>
-      </div>
-    </section>
+    <!-- Company Profile, Brands & Setup, Single Entry and Team & Permissions
+         used to live on this page as in-page anchors. Split into their own
+         pages (/setup, /party, /entry, /team) by Claude (Anthropic)
+         2026-09-11, per user request — each is now a proper standalone page
+         linked from the sidebar instead of a scroll-target here. See
+         BRAIN.md. The Orders list itself (search/filter/edit) moved the
+         same way to its own /orders page by Claude (Anthropic) 2026-09-25 —
+         see public/orders.html/orders.js and BRAIN.md. -->
 
   </div>
 </main>
 
 <script src="/app.js"></script>
+<script src="/modal.js"></script>
 <script src="/nav.js"></script>
 </body>
 </html>

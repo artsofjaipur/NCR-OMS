@@ -47,7 +47,111 @@
     });
   }
 
+  // ---------- SKU auto-match ("sku auto select kare khud samjh ke ki ye
+  // isme jayega") — used by the "Map SKU" fix-it modal to guess which
+  // internal SKU a marketplace SKU string like "HT-03-Black_XL" really
+  // means, instead of making the person scroll/search every time. Pure
+  // string comparison, no server round trip needed. ----------
+  function skuCompact(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+  function skuTokens(s) { return String(s || "").toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); }
+  function levenshtein(a, b) {
+    var m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    var prev = [];
+    for (var j = 0; j <= n; j++) prev[j] = j;
+    for (var i = 1; i <= m; i++) {
+      var cur = [i];
+      for (var j2 = 1; j2 <= n; j2++) {
+        cur[j2] = Math.min(prev[j2] + 1, cur[j2 - 1] + 1, prev[j2 - 1] + (a[i - 1] === b[j2 - 1] ? 0 : 1));
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
+  function tokenJaccard(aTokens, bTokens) {
+    if (!aTokens.length || !bTokens.length) return 0;
+    var setA = {}; aTokens.forEach(function (t) { setA[t] = 1; });
+    var setB = {}; bTokens.forEach(function (t) { setB[t] = 1; });
+    var inter = 0;
+    Object.keys(setA).forEach(function (t) { if (setB[t]) inter++; });
+    var union = Object.keys(setA).length + Object.keys(setB).length - inter;
+    return union ? inter / union : 0;
+  }
+  /** 0..1 — how likely `marketplaceSku` refers to this internal `sku`. */
+  function skuMatchScore(marketplaceSku, sku) {
+    var mCompact = skuCompact(marketplaceSku);
+    var mTokens = skuTokens(marketplaceSku);
+    var candidates = [sku.code, sku.productTitle].filter(Boolean);
+    var best = 0;
+    candidates.forEach(function (c) {
+      var cCompact = skuCompact(c);
+      if (!cCompact) return;
+      if (cCompact === mCompact) { best = 1; return; }
+      var lev = 1 - levenshtein(mCompact, cCompact) / Math.max(mCompact.length, cCompact.length, 1);
+      var jac = tokenJaccard(mTokens, skuTokens(c));
+      var combined = Math.max(lev, jac) * 0.65 + Math.min(lev, jac) * 0.35;
+      if (cCompact.indexOf(mCompact) !== -1 || mCompact.indexOf(cCompact) !== -1) combined = Math.max(combined, 0.8);
+      if (combined > best) best = combined;
+    });
+    return best;
+  }
+
   $("#tb-role").textContent = auth.role || "OWNER";
+  // Company Profile (the authoritative source) now lives on /setup — the
+  // topbar here just mirrors the session's cached name, same as the other
+  // secondary pages (finance.js, reports.js). Claude (Anthropic) 2026-09-11.
+  $("#tb-company").textContent = auth.companyName || "";
+
+  // ---------- live analog clock + date (topbar) — Claude (Anthropic) 2026-09-11 ----------
+  // Pure client-side (uses the browser's own local time — no server round-trip),
+  // so it keeps ticking even on a slow connection. See BRAIN.md 2026-09-11.
+  (function initLiveClock() {
+    var svgNS = "http://www.w3.org/2000/svg";
+    var ticks = $("#tb-clock-ticks");
+    var hourHand = $("#tb-clock-hour");
+    var minHand = $("#tb-clock-min");
+    var secHand = $("#tb-clock-sec");
+    var digital = $("#tb-clock-digital");
+    var dateEl = $("#tb-clock-date");
+    if (!ticks || !hourHand || !minHand || !secHand || !digital || !dateEl) return;
+
+    // 12 tick marks around the face, drawn once.
+    for (var i = 0; i < 12; i++) {
+      var angle = i * 30;
+      var isMajor = i % 3 === 0; // 12/3/6/9 get a slightly longer tick
+      var line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", "50");
+      line.setAttribute("y1", isMajor ? "6" : "8");
+      line.setAttribute("x2", "50");
+      line.setAttribute("y2", "13");
+      line.setAttribute("transform", "rotate(" + angle + " 50 50)");
+      if (isMajor) line.style.strokeWidth = "3";
+      ticks.appendChild(line);
+    }
+
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+    var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    var MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    function tick() {
+      var now = new Date();
+      var h = now.getHours() % 12;
+      var m = now.getMinutes();
+      var s = now.getSeconds();
+
+      hourHand.style.transform = "rotate(" + (h * 30 + m * 0.5) + "deg)";
+      minHand.style.transform = "rotate(" + (m * 6 + s * 0.1) + "deg)";
+      secHand.style.transform = "rotate(" + (s * 6) + "deg)";
+
+      var h12 = now.getHours() % 12 || 12;
+      var ampm = now.getHours() < 12 ? "AM" : "PM";
+      digital.textContent = pad(h12) + ":" + pad(m) + ":" + pad(s) + " " + ampm;
+      dateEl.textContent = DOW[now.getDay()] + ", " + now.getDate() + " " + MON[now.getMonth()] + " " + now.getFullYear();
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
 
   $("#logout-btn").addEventListener("click", function () {
     sessionStorage.removeItem("ncr_auth");
@@ -56,8 +160,8 @@
 
   // ---------- state ----------
   var summary = null;
+  var dailySummary = null;
   var selectedFile = null;
-  var myPermissions = (auth && auth.permissions) || [];
 
   // ---------- file input + drag & drop ----------
   var dropzone = $("#dropzone");
@@ -125,17 +229,57 @@
           return;
         }
         var imported = r.data.imported || 0;
+        var newCount = r.data.newOrders != null ? r.data.newOrders : imported;
+        var dupCount = r.data.duplicateOrders || 0;
         var failed = r.data.failed || 0;
+        var stockWarnCount = r.data.stockWarnings || 0;
+        var autoMappedCount = r.data.autoMapped || 0;
         var html = "<b class='ok'>" + imported + " order" + (imported === 1 ? "" : "s") + " imported</b>" +
           (failed ? ", <b>" + failed + " failed</b>" : "") + ".";
+        // "Imported" used to lump brand-new orders and already-existing ones
+        // (re-uploaded/overlapping rows, updated in place — safe, but silent)
+        // into one number. User request: "duplicate order ka bhi pata chalna
+        // chahiye" — so every duplicate is now called out by name, not just
+        // counted.
+        if (dupCount) {
+          html += "<div style='margin-top:6px;color:var(--muted)'>" + newCount + " new, <b>" + dupCount +
+            "</b> already existed in the system — updated (status refreshed), not re-created.</div>";
+          var dupRows = (r.data.results || []).filter(function (x) { return x.orderId && x.created === false; }).slice(0, 8);
+          if (dupRows.length) {
+            html += "<div style='margin-top:4px;font-size:12.5px;color:var(--muted)'>Duplicate order no.(s): " +
+              dupRows.map(function (x) { return esc(x.marketplaceOrderId); }).join(", ") +
+              (dupCount > dupRows.length ? " …" : "") + "</div>";
+          }
+        }
         var errs = (r.data.results || []).filter(function (x) { return x.error; }).slice(0, 5);
         if (errs.length) {
           html += "<ul>" + errs.map(function (x) {
-            return "<li>" + esc(x.order || x.marketplaceOrderId || "row") + ": " + esc(x.error) + "</li>";
+            var fixBtn = x.unmappedSku
+              ? " <button type='button' class='bm-mini' data-map-sku='" + esc(x.unmappedSku) + "' data-account-id='" + accountId + "'>Map SKU</button>"
+              : "";
+            return "<li>" + esc(x.order || x.marketplaceOrderId || "row") + ": " + esc(x.error) + fixBtn + "</li>";
           }).join("") + "</ul>";
         }
+        // Orders with no recorded stock still import (never blocked on a
+        // stock count this app was never told) -- but flagged here so it's
+        // not a silent negative number nobody notices.
+        if (stockWarnCount) {
+          var warnRows = (r.data.results || []).filter(function (x) { return x.stockWarning; }).slice(0, 5);
+          html += "<div style='margin-top:8px;color:var(--orange)'>⚠ " + stockWarnCount + " order" + (stockWarnCount === 1 ? "" : "s") +
+            " imported with no recorded stock for some SKU(s) — do a Stock In (Party Master page) when you can:</div>" +
+            "<ul>" + warnRows.map(function (x) { return "<li>" + esc(x.marketplaceOrderId) + ": " + esc(x.stockWarning) + "</li>"; }).join("") + "</ul>";
+        }
+        // Unmapped marketplace SKUs no longer block the order at all (user's
+        // explicit choice — "bilkul auto, kabhi block hi na ho"): a close
+        // match auto-maps, anything else auto-creates a new SKU on the spot.
+        // Called out here so it stays reviewable, not a silent catalog change.
+        if (autoMappedCount) {
+          var autoRows = (r.data.results || []).filter(function (x) { return x.autoMappedSku; }).slice(0, 8);
+          html += "<div style='margin-top:8px;color:var(--gold)'>🔎 " + autoMappedCount + " order" + (autoMappedCount === 1 ? "" : "s") +
+            " had a marketplace SKU auto-resolved (no manual mapping needed) — review when you can:</div>" +
+            "<ul>" + autoRows.map(function (x) { return "<li>" + esc(x.marketplaceOrderId) + ": " + esc(x.autoMappedSku) + "</li>"; }).join("") + "</ul>";
+        }
         showResult(imported > 0 ? "ok" : "err", html);
-        loadOrders();
         loadSummary();
       }).catch(function (err) {
         btn.disabled = false;
@@ -148,6 +292,188 @@
 
   function showResult(kind, html) {
     var box = $("#upload-result");
+    box.className = "result " + kind;
+    box.innerHTML = html;
+    box.hidden = false;
+  }
+
+  // ---------- fix-it: map an unmapped marketplace SKU straight from the
+  // failed-import list, instead of sending the user hunting for a separate
+  // SKU-mapping screen. Once mapped, re-uploading the SAME csv is always
+  // safe (ingestion is idempotent on marketplaceOrderId — the rows that
+  // already imported come back as duplicates and just get their status
+  // refreshed, per the duplicate messaging above). ----------
+  $("#upload-result").addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest("[data-map-sku]");
+    if (!btn) return;
+    openMapSkuModal(btn.getAttribute("data-map-sku"), Number(btn.getAttribute("data-account-id")));
+  });
+
+  function openMapSkuModal(marketplaceSku, accountId) {
+    var acct = ((summary && summary.accounts) || []).filter(function (a) { return a.id === accountId; })[0];
+    if (!acct || !acct.brandId) { alert("Could not find the brand for this seller account."); return; }
+
+    var m = window.NcrModal.open({
+      title: "Map “" + marketplaceSku + "”",
+      bodyHtml:
+        "<p style='margin:0 0 6px;font-size:13px;color:var(--muted)'>This marketplace SKU has no internal SKU mapping for <b>" +
+          esc(acct.sellerAccountLabel || acct.marketplace) + "</b>, so orders using it get rejected.</p>" +
+        "<div id='ms-hint' style='margin:0 0 10px;font-size:12px;color:var(--muted)'>Looking for a match…</div>" +
+        "<label>Search your SKUs <input id='ms-search' type='text' placeholder='code or title…' autocomplete='off' /></label>" +
+        "<div id='ms-list' style='max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:4px;margin:8px 0'>Loading…</div>" +
+        "<div class='bm-head' style='margin-top:14px'><b>Or create a new SKU &amp; map it</b></div>" +
+        "<label>SKU code <input id='ms-new-code' type='text' value='" + esc(marketplaceSku) + "' /></label>" +
+        "<button type='button' class='btn' id='ms-new-btn' style='margin-top:8px'>Create &amp; Map</button>" +
+        "<div id='ms-result' class='result' style='margin-top:10px' hidden></div>",
+    });
+
+    function msMsg(kind, msg) {
+      var box = m.body.querySelector("#ms-result");
+      box.className = "result " + kind;
+      box.textContent = msg;
+      box.hidden = false;
+    }
+
+    // "SKU auto select kare khud samjh ke ki ye isme jayega" -- rank every
+    // candidate SKU by how likely it is the same product as the marketplace
+    // SKU string (see skuMatchScore above), instead of leaving the person to
+    // scroll/search a possibly long SKU list every single time.
+    var AUTO_THRESHOLD = 0.92; // near/exact match -- confident enough to map without a click
+    var SUGGEST_THRESHOLD = 0.45; // still worth highlighting, but needs a confirm click
+    var allSkus = [];
+    var scored = [];
+    function renderList(filterText) {
+      var list = m.body.querySelector("#ms-list");
+      var f = (filterText || "").trim().toLowerCase();
+      var rows = !f ? scored : scored.filter(function (s) {
+        return (s.code || "").toLowerCase().indexOf(f) !== -1 || (s.productTitle || "").toLowerCase().indexOf(f) !== -1;
+      });
+      if (!rows.length) { list.innerHTML = "<span class='empty'>No matching SKU — create one below.</span>"; return; }
+      list.innerHTML = rows.slice(0, 100).map(function (s, idx) {
+        var suggested = !f && idx === 0 && s._score >= SUGGEST_THRESHOLD;
+        return "<button type='button' class='bm-mini' data-sku-id='" + s.id + "'" +
+          " style='text-align:left;justify-content:flex-start;flex-direction:column;align-items:flex-start" +
+          (suggested ? ";border-color:var(--gold2);background:rgba(216,180,92,0.08)" : "") + "'>" +
+          (suggested ? "<span style='color:var(--gold);font-size:10px;letter-spacing:.6px;font-weight:600'>SUGGESTED MATCH</span>" : "") +
+          "<span><b>" + esc(s.code) + "</b>" + (s.productTitle ? " — " + esc(s.productTitle) : "") + (s.size ? " (" + esc(s.size) + ")" : "") + "</span>" +
+          "</button>";
+      }).join("");
+    }
+
+    function mapToSku(skuId, auto) {
+      api("/skus/map", { method: "POST", body: { marketplaceAccountId: accountId, marketplaceSku: marketplaceSku, skuId: skuId } }).then(function (r) {
+        if (!r.ok) { msMsg("err", (r.data && r.data.error) || "Mapping failed."); return; }
+        msMsg("ok", (auto ? "Auto-mapped (matched automatically). " : "Mapped! ") +
+          "Re-upload the same CSV — this order will go through now (already-imported rows are safely skipped as duplicates).");
+        setTimeout(function () { m.close(); }, 1800);
+      }).catch(function () { msMsg("err", "Network error — try again."); });
+    }
+
+    api("/companies/me/brands/" + acct.brandId + "/skus").then(function (r) {
+      allSkus = (r.ok && Array.isArray(r.data)) ? r.data : [];
+      scored = allSkus
+        .map(function (s) { return Object.assign({}, s, { _score: skuMatchScore(marketplaceSku, s) }); })
+        .sort(function (a, b) { return b._score - a._score; });
+      var top = scored[0];
+      var hint = m.body.querySelector("#ms-hint");
+      if (top && top._score >= AUTO_THRESHOLD) {
+        hint.textContent = "Confident match found — mapping automatically…";
+        renderList("");
+        mapToSku(top.id, true);
+      } else if (top && top._score >= SUGGEST_THRESHOLD) {
+        hint.textContent = "Best guess highlighted below — click to confirm, or search/create a different one.";
+        renderList("");
+      } else {
+        hint.textContent = allSkus.length ? "No confident match — search below or create a new SKU." : "No SKUs yet for this brand — create one below.";
+        renderList("");
+      }
+    });
+
+    m.body.querySelector("#ms-search").addEventListener("input", function (e2) { renderList(e2.target.value); });
+    m.body.querySelector("#ms-list").addEventListener("click", function (e2) {
+      var b = e2.target.closest && e2.target.closest("[data-sku-id]");
+      if (b) mapToSku(Number(b.getAttribute("data-sku-id")));
+    });
+    m.body.querySelector("#ms-new-btn").addEventListener("click", function () {
+      var code = m.body.querySelector("#ms-new-code").value.trim();
+      if (!code) { msMsg("err", "Enter a SKU code."); return; }
+      api("/skus", { method: "POST", body: { brandId: acct.brandId, code: code, productTitle: code } }).then(function (r) {
+        if (!r.ok) { msMsg("err", (r.data && r.data.error) || "Could not create SKU (maybe it already exists — search above)."); return; }
+        mapToSku(r.data.id);
+      }).catch(function () { msMsg("err", "Network error — try again."); });
+    });
+  }
+
+  // ---------- AWB / manifest upload (separate from the order-sheet upload
+  // above -- no account/warehouse picker, matches by order id within
+  // whichever company is currently selected) ----------
+  var awbDropzone = $("#awb-dropzone");
+  var awbFileInput = $("#awb-file");
+  var awbSelectedFile = null;
+  awbFileInput.addEventListener("change", function () {
+    if (awbFileInput.files.length) setAwbFile(awbFileInput.files[0]);
+  });
+  ["dragenter", "dragover"].forEach(function (ev) {
+    awbDropzone.addEventListener(ev, function (e) { e.preventDefault(); awbDropzone.classList.add("drag"); });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    awbDropzone.addEventListener(ev, function (e) { e.preventDefault(); awbDropzone.classList.remove("drag"); });
+  });
+  awbDropzone.addEventListener("drop", function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) setAwbFile(f);
+  });
+  function setAwbFile(f) {
+    var isPdf = /\.pdf$/i.test(f.name);
+    var isCsv = /\.csv$/i.test(f.name);
+    if (!isPdf && !isCsv) { showAwbResult("err", "Only .csv or .pdf files are accepted."); return; }
+    awbSelectedFile = f;
+    $("#awb-dz-name").textContent = f.name + " (" + (f.size / 1024).toFixed(1) + " KB)";
+  }
+
+  // Meesho's real "Supplier Manifest" (2026-09-26) is a PDF, parsed server
+  // side (see src/ingestion/meeshoManifestPdf.ts) -- read as base64 and
+  // posted as pdfBase64, same convention Finance's settlement-report upload
+  // already uses for its .xlsx files. A .csv still reads as plain text and
+  // posts as csv, unchanged.
+  $("#awb-upload-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    $("#awb-upload-result").hidden = true;
+    if (!awbSelectedFile) { showAwbResult("err", "Choose the AWB/manifest CSV or PDF first."); return; }
+    var isPdf = /\.pdf$/i.test(awbSelectedFile.name);
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      var btn = $("#awb-up-btn");
+      btn.disabled = true;
+      btn.classList.add("loading");
+      var body = isPdf ? { pdfBase64: String(reader.result).split(",")[1] || "" } : { csv: String(reader.result) };
+      api("/orders/awb-import", { method: "POST", body: body }).then(function (r) {
+        btn.disabled = false;
+        btn.classList.remove("loading");
+        if (!r.ok) { showAwbResult("err", (r.data && r.data.error) || "Upload failed — try again."); return; }
+        var imported = r.data.imported || 0;
+        var failed = r.data.failed || 0;
+        var html = "<b class='ok'>" + imported + " AWB" + (imported === 1 ? "" : "s") + " matched &amp; saved</b>" +
+          (failed ? ", <b>" + failed + " failed</b>" : "") + ".";
+        var errs = (r.data.results || []).filter(function (x) { return x.error; }).slice(0, 5);
+        if (errs.length) {
+          html += "<ul>" + errs.map(function (x) { return "<li>" + esc(x.order || x.row || "row") + ": " + esc(x.error) + "</li>"; }).join("") + "</ul>";
+        }
+        showAwbResult(imported > 0 ? "ok" : "err", html);
+        loadSummary();
+      }).catch(function (err) {
+        btn.disabled = false;
+        btn.classList.remove("loading");
+        if (err && err.message !== "session expired") showAwbResult("err", "Network error — try again.");
+      });
+    };
+    if (isPdf) reader.readAsDataURL(awbSelectedFile);
+    else reader.readAsText(awbSelectedFile);
+  });
+
+  function showAwbResult(kind, html) {
+    var box = $("#awb-upload-result");
     box.className = "result " + kind;
     box.innerHTML = html;
     box.hidden = false;
@@ -169,11 +495,21 @@
 
       renderAccounts();
       renderWarehouses();
-      renderBrands();
       renderTrend();
-      fillEntrySelects();
+      // Daily Summary panel has its own endpoint (different aggregation
+      // shape) but should refresh whenever the KPI strip does — every
+      // existing loadSummary() call site (order save, CSV import, boot)
+      // picks this up for free this way.
+      loadDailySummary();
     });
   }
+
+  // ---------- company name in topbar ----------
+  // Full Company Profile (edit form, bank accounts, access list, delete) now
+  // lives on its own page — see /setup (public/setup.js). The dashboard only
+  // needs the display name for the topbar chip, via /dashboard/summary
+  // (loadSummary below) — cheaper than a second /companies/me round trip.
+  // Split from this file by Claude (Anthropic) 2026-09-11, see BRAIN.md.
 
   // ---------- selects ----------
   // Seller account IS the selector — its marketplace auto-detected and shown
@@ -210,256 +546,9 @@
     }).join("") || "<option value=\"\">No warehouse</option>";
   }
 
-  // ---------- brands ----------
-  var openManageBrandId = null;
-
-  function renderBrands() {
-    var list = $("#brand-list");
-    var brands = (summary && summary.brands) || [];
-    var accounts = (summary && summary.accounts) || [];
-    $("#brand-count").textContent = String(brands.length);
-    if (!brands.length) {
-      list.innerHTML = "<div class='empty'>No brands yet — add your first below.</div>";
-    } else {
-      list.innerHTML = brands.map(function (b) {
-        var mps = accounts.filter(function (a) { return a.brandId === b.id; });
-        return "<div class='brand-row'>" +
-          "<div><div class='b-name'>" + esc(b.name) + "</div></div>" +
-          "<div class='b-mps'>" + mps.map(function (a) {
-            return "<span class='mp-tag'>" + esc(a.marketplace) + "</span>";
-          }).join("") +
-          " <button type='button' class='bm-mini' data-manage='" + b.id + "'>Manage</button></div>" +
-          "</div>";
-      }).join("");
-    }
-
-    $all("[data-manage]").forEach(function (btn) {
-      btn.addEventListener("click", function () { toggleManage(Number(btn.getAttribute("data-manage"))); });
-    });
-
-    var sel = $("#sb-brand");
-    sel.innerHTML = brands.length
-      ? brands.map(function (b) { return "<option value='" + b.id + "'>" + esc(b.name) + "</option>"; }).join("")
-      : "<option value=''>Add a brand first</option>";
-
-    if (openManageBrandId) renderManage(openManageBrandId);
-  }
-
-  function toggleManage(brandId) {
-    openManageBrandId = openManageBrandId === brandId ? null : brandId;
-    var box = $("#brand-manage");
-    box.hidden = !openManageBrandId;
-    if (openManageBrandId) renderManage(openManageBrandId);
-  }
-
-  function renderManage(brandId) {
-    var brands = (summary && summary.brands) || [];
-    var accounts = (summary && summary.accounts) || [];
-    var b = brands.find(function (x) { return x.id === brandId; });
-    var box = $("#brand-manage");
-    if (!b) { box.hidden = true; openManageBrandId = null; return; }
-
-    var accs = accounts.filter(function (a) { return a.brandId === brandId; });
-    box.innerHTML =
-      "<div class='bm-head'><b>" + esc(b.name) + "</b><span class='chip chip-dim'>BRAND</span></div>" +
-      "<div class='bm-actions'>" +
-        "<input type='text' id='bm-rename' placeholder='New brand name…' />" +
-        "<button type='button' class='bm-mini' id='bm-rename-btn'>Rename</button>" +
-        "<button type='button' class='bm-mini danger' id='bm-delete-btn'>Delete Brand</button>" +
-      "</div>" +
-      "<div class='bm-head' style='margin-top:14px'><b>Seller accounts</b></div>" +
-      (accs.length ? accs.map(function (a) {
-        var active = a.isActive !== false;
-        return "<div class='brand-row acc-row'><div class='b-name'>" + esc(a.sellerAccountLabel || a.marketplace) +
-          (active ? "" : " <span class='pill pill-red' style='margin-left:6px'>OFF</span>") + "</div>" +
-          "<div class='b-mps'><span class='mp-tag'>" + esc(a.marketplace) + "</span>" +
-          "<button type='button' class='bm-mini deact' data-deact='" + a.id + "' data-next='" + (active ? "false" : "true") + "'>" + (active ? "Deactivate" : "Activate") + "</button></div></div>";
-      }).join("") : "<div class='empty' style='padding:8px 0'>No accounts attached.</div>") +
-      "<div class='bm-head' style='margin-top:14px'><b>SKUs</b><button type='button' class='bm-mini' id='bm-skus-btn'>Show SKUs</button></div>" +
-      "<div class='bm-skus' id='bm-skus' hidden></div>" +
-      "<div class='bm-head' style='margin-top:14px'><b>Add SKUs (bulk paste)</b></div>" +
-      "<textarea id='bm-bulk-codes' rows='3' placeholder='Ek line me ek SKU code…\nJK-1001-A\nJK-1001-B' style='width:100%;background:var(--bg2);border:1.5px solid var(--line2);color:var(--text);border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;outline:none'></textarea>" +
-      "<button type='button' class='bm-mini' id='bm-bulk-btn' style='margin-top:8px'>Add SKUs</button>" +
-      "<div id='bm-result' class='result' hidden></div>";
-
-    function bmMsg(kind, msg) {
-      var el = $("#bm-result");
-      el.className = "result " + kind;
-      el.textContent = msg;
-      el.hidden = false;
-    }
-
-    function on(sel, fn) {
-      var el = $(sel);
-      if (el) el.addEventListener("click", fn);
-    }
-
-    // Bulk SKU add — paste list, existing skipped, new auto-mapped.
-    on("#bm-bulk-btn", function () {
-      var codes = $("#bm-bulk-codes").value.trim();
-      if (!codes) { bmMsg("err", "Paste at least one SKU code."); return; }
-      api("/skus/bulk", { method: "POST", body: { brandId: brandId, codes: codes } }).then(function (r) {
-        if (!r.ok) { bmMsg("err", (r.data && r.data.error) || "Bulk add failed."); return; }
-        var d = r.data;
-        bmMsg(d.created ? "ok" : "err",
-          d.created + " SKU(s) added" + (d.skipped && d.skipped.length ? ", " + d.skipped.length + " already existed (skipped)" : "") +
-          (d.mapped ? " · " + d.mapped + " account mappings ensured" : ""));
-        $("#bm-bulk-codes").value = "";
-        loadSummary();
-      });
-    });
-
-    on("#bm-rename-btn", function () {
-      var name = $("#bm-rename").value.trim();
-      if (name.length < 2) { bmMsg("err", "Name needs 2+ characters."); return; }
-      api("/companies/me/brands/" + brandId, { method: "PATCH", body: { name: name } }).then(function (r) {
-        if (!r.ok) { bmMsg("err", (r.data && r.data.error) || "Rename failed."); return; }
-        bmMsg("ok", "Renamed.");
-        loadSummary();
-      });
-    });
-
-    on("#bm-delete-btn", function () {
-      if (!confirm("Delete brand \"" + b.name + "\"? This also removes its accounts and SKUs. Brands with orders cannot be deleted.")) return;
-      api("/companies/me/brands/" + brandId, { method: "DELETE" }).then(function (r) {
-        if (r.status === 204) {
-          bmMsg("ok", "Brand deleted.");
-          openManageBrandId = null;
-          box.hidden = true;
-          loadSummary();
-        } else {
-          bmMsg("err", (r.data && r.data.error) || "Delete failed.");
-        }
-      });
-    });
-
-    $all("[data-deact]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var accId = Number(btn.getAttribute("data-deact"));
-        var next = btn.getAttribute("data-next") === "true";
-        api("/companies/me/marketplace-accounts/" + accId, { method: "PATCH", body: { isActive: next } }).then(function (r) {
-          if (r.status === 204) {
-            bmMsg("ok", next ? "Account activated — upload selects me wapas aa gaya." : "Account deactivated — upload selects se hat gaya.");
-            loadSummary();
-          }
-          else bmMsg("err", (r.data && r.data.error) || "Failed.");
-        });
-      });
-    });
-
-    on("#bm-skus-btn", function () {
-      var pane = $("#bm-skus");
-      if (!pane.hidden) { pane.hidden = true; return; }
-      api("/companies/me/brands/" + brandId + "/skus").then(function (r) {
-        if (!r.ok || !Array.isArray(r.data)) { bmMsg("err", "Could not load SKUs."); return; }
-        pane.innerHTML = r.data.length
-          ? r.data.map(function (s) {
-              return "<div class='bm-sku-row'><b>" + esc(s.code) + "</b><span>" + esc(s.productTitle) + (s.size ? " · " + esc(s.size) : "") + "</span></div>";
-            }).join("")
-          : "<div class='empty' style='padding:8px 0'>No SKUs yet — add via SKU API or ask support for the bulk importer.</div>";
-        pane.hidden = false;
-      });
-    });
-  }
-
-  // ---------- parties & stock in (purchase bills) ----------
-  function renderParties() {
-    api("/suppliers").then(function (r) {
-      if (!r.ok || !Array.isArray(r.data)) return;
-      var sel = $("#sup-list");
-      sel.innerHTML = r.data.length
-        ? "<option value=''>— pick party (optional) —</option>" + r.data.map(function (s) {
-            return "<option value='" + s.id + "'>" + esc(s.name) + "</option>";
-          }).join("")
-        : "<option value=''>No parties yet — add above</option>";
-    });
-  }
-
-  function renderSkuPicker() {
-    api("/skus").then(function (r) {
-      if (!r.ok || !Array.isArray(r.data)) return;
-      var sel = $("#pi-sku");
-      sel.innerHTML = r.data.length
-        ? r.data.map(function (s) {
-            return "<option value='" + s.id + "'>" + esc(s.code) + (s.productTitle && s.productTitle !== s.code ? " — " + esc(s.productTitle) : "") + "</option>";
-          }).join("")
-        : "<option value=''>No SKUs yet — add via Brands panel</option>";
-    });
-  }
-
-  $("#sup-add-btn").addEventListener("click", function () {
-    var name = $("#sup-name").value.trim();
-    if (name.length < 2) { showSetup("err", "Party name needs 2+ characters."); return; }
-    api("/suppliers", { method: "POST", body: { name: name } }).then(function (r) {
-      if (!r.ok) { showSetup("err", (r.data && r.data.error) || "Could not add party."); return; }
-      $("#sup-name").value = "";
-      showSetup("ok", "Party added.");
-      renderParties();
-    });
-  });
-
-  $("#pi-btn").addEventListener("click", function () {
-    var skuId = Number($("#pi-sku").value);
-    var qty = Number($("#pi-qty").value);
-    var cost = $("#pi-cost").value.trim();
-    var wh = Number($("#pi-warehouse").value);
-    var supplierId = Number($("#sup-list").value) || undefined;
-    if (!skuId) { showSetup("err", "Pick a SKU."); return; }
-    if (!qty || qty < 1) { showSetup("err", "Quantity must be at least 1."); return; }
-    if (!wh) { showSetup("err", "Pick the warehouse receiving the stock."); return; }
-    api("/purchases", {
-      method: "POST",
-      body: {
-        warehouseId: wh,
-        supplierId: supplierId,
-        source: "PURCHASE_ORDER",
-        poReference: $("#sup-list").selectedOptions && $("#sup-list").selectedOptions[0] ? $("#sup-list").selectedOptions[0].text : undefined,
-        items: [{ skuId: skuId, quantity: qty, unitCost: cost ? cost : "0" }],
-      },
-    }).then(function (r) {
-      if (!r.ok) { showSetup("err", (r.data && r.data.error) || "Stock In failed."); return; }
-      showSetup("ok", "Stock In recorded — " + qty + " unit(s) added to inventory (ledger updated)."
-        + (supplierId ? " Party bill reference saved." : ""));
-      $("#pi-qty").value = ""; $("#pi-cost").value = "";
-    });
-  });
-
-  // ---------- workspace setup (brands + marketplace accounts) ----------
-  function showSetup(kind, msg) {
-    var box = $("#setup-result");
-    box.className = "result " + kind;
-    box.textContent = msg;
-    box.hidden = false;
-  }
-
-  $("#sb-brand-btn").addEventListener("click", function () {
-    var nameEl = $("#sb-brand-name");
-    var name = nameEl.value.trim();
-    if (name.length < 2) { showSetup("err", "Brand name needs at least 2 characters."); return; }
-    api("/companies/me/brands", { method: "POST", body: { name: name } }).then(function (r) {
-      if (!r.ok) { showSetup("err", (r.data && r.data.error) || "Could not add brand."); return; }
-      nameEl.value = "";
-      showSetup("ok", "Brand added.");
-      loadSummary();
-    });
-  });
-
-  $("#sb-account-btn").addEventListener("click", function () {
-    var brandId = Number($("#sb-brand").value);
-    var mp = $("#sb-mp").value;
-    var label = $("#sb-label").value.trim();
-    if (!brandId) { showSetup("err", "Pick (or add) a brand first."); return; }
-    if (!label) { showSetup("err", "Give the seller account a label, e.g. \"Vardhamiti Official\"."); return; }
-    api("/companies/me/marketplace-accounts", {
-      method: "POST",
-      body: { brandId: brandId, marketplace: mp, sellerAccountLabel: label },
-    }).then(function (r) {
-      if (!r.ok) { showSetup("err", (r.data && r.data.error) || "Could not attach account."); return; }
-      $("#sb-label").value = "";
-      showSetup("ok", "Seller account attached — it now appears in the upload form.");
-      loadSummary();
-    });
-  });
+  // Brand/seller-account management, parties & stock-in now live on their own
+  // pages (/setup, /party) — see public/setup.js and public/party.js.
+  // Split from this file by Claude (Anthropic) 2026-09-11, see BRAIN.md.
 
   // ---------- trend ----------
   function renderTrend() {
@@ -489,257 +578,178 @@
     $("#trend-foot").innerHTML = "<b>" + num(total14) + "</b> orders in 14 days &middot; <b>" + money(rev14) + "</b> revenue";
   }
 
-  // ---------- recent orders ----------
-  function loadOrders() {
-    api("/orders").then(function (r) {
-      if (!r.ok || !Array.isArray(r.data)) return;
-      var rows = r.data.slice(0, 20);
-      var accounts = (summary && summary.accounts) || [];
-      var accMap = {};
-      accounts.forEach(function (a) { accMap[a.id] = a.marketplace; });
+  // ---------- Daily Summary dashboard (OVERALL TOTALS / PLATFORM-WISE
+  // BREAKDOWN / DAILY SUMMARY, every number clickable) — added by Claude
+  // (Anthropic) 2026-09-25 per user's dashboard spec. Backed by
+  // GET /dashboard/daily-summary and GET /dashboard/daily-summary/detail
+  // (src/routes/dashboard.ts). See that file's own comment for exactly how
+  // "Orders Dispatched" is defined (shipments.packedAt) — the same
+  // assumption is echoed in the panel's subtitle above the tiles. ----------
+  var DS_TILES = [
+    { key: "ordersDispatched", label: "Orders Dispatched", fmt: num },
+    { key: "dispatchAmount", label: "Dispatch Amount", fmt: money },
+    { key: "returnsExpected", label: "Returns Expected", fmt: num },
+    { key: "returnsReceived", label: "Returns Received", fmt: num },
+    { key: "returnsPending", label: "Returns Pending", fmt: num },
+    { key: "returnsDueToday", label: "Returns Due Today", fmt: num },
+    { key: "returnsOverdue", label: "Returns Overdue", fmt: num },
+  ];
 
-      var tb = $("#orders-table tbody");
-      $("#orders-empty").style.display = rows.length ? "none" : "block";
-      tb.innerHTML = rows.map(function (o) {
-        var dt = o.orderedAt ? new Date(o.orderedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—";
-        return "<tr>" +
-          "<td><b>" + esc(o.marketplaceOrderId) + "</b></td>" +
-          "<td>" + esc(accMap[o.marketplaceAccountId] || "—") + "</td>" +
-          "<td><span class='status st-" + esc(o.status) + "'>" + esc(o.status.replace(/_/g, " ")) + "</span></td>" +
-          "<td>—</td>" +
-          "<td>" + dt + "</td></tr>";
-      }).join("");
-    });
-  }
-
-  // ---------- single entry (order + return) ----------
-  function entryMsg(kind, msg) {
-    var box = $("#entry-result");
-    box.className = "result " + kind;
-    box.textContent = msg;
-    box.hidden = false;
-    setTimeout(function () { box.hidden = true; }, 7000);
-  }
-
-  function fillEntrySelects() {
-    var accounts = ((summary && summary.accounts) || []).filter(function (a) { return a.isActive !== false; });
-    var opts = accounts.map(function (a) {
-      return "<option value='" + a.id + "'>" + esc(a.sellerAccountLabel || a.marketplace) + " — " + esc(a.marketplace) + "</option>";
-    }).join("");
-    $("#so-account").innerHTML = opts || "<option value=''>No seller account</option>";
-    var whs = ((summary && summary.warehouses) || []);
-    var wopts = whs.map(function (w) { return "<option value='" + w.id + "'>" + esc(w.name) + "</option>"; }).join("");
-    $("#so-warehouse").innerHTML = wopts || "<option value=''>No warehouse</option>";
-  }
-
-  $("#so-form").addEventListener("submit", function (e) {
-    e.preventDefault();
-    var body = {
-      marketplaceAccountId: Number($("#so-account").value),
-      warehouseId: Number($("#so-warehouse").value),
-      marketplaceOrderId: $("#so-oid").value.trim(),
-      marketplaceSku: $("#so-sku").value.trim().toUpperCase(),
-      quantity: Number($("#so-qty").value) || 1,
-      unitPrice: $("#so-price").value,
-      customerCity: $("#so-city").value.trim() || undefined,
-    };
-    var size = $("#so-size").value.trim();
-    if (size) body.size = size;
-    if (!body.marketplaceAccountId || !body.warehouseId) { entryMsg("err", "Store aur warehouse chuno."); return; }
-    var btn = $("#so-btn");
-    btn.disabled = true;
-    api("/entry/order", { method: "POST", body: body }).then(function (r) {
-      btn.disabled = false;
-      if (!r.ok) { entryMsg("err", (r.data && r.data.error) || "Order entry failed."); return; }
-      entryMsg("ok", "Order #" + r.data.orderId + " created — stock reserved, ledger connected ✓");
-      ["#so-oid", "#so-sku", "#so-size", "#so-city"].forEach(function (s) { $(s).value = ""; });
-      loadOrders(); loadSummary();
-    }).catch(function () { btn.disabled = false; });
-  });
-
-  $("#sr-form").addEventListener("submit", function (e) {
-    e.preventDefault();
-    var body = { marketplaceOrderId: $("#sr-oid").value.trim() };
-    if ($("#sr-awb").value.trim()) body.reverseAwb = $("#sr-awb").value.trim();
-    if ($("#sr-courier").value.trim()) body.reverseCarrier = $("#sr-courier").value.trim();
-    if ($("#sr-note").value.trim()) body.notes = $("#sr-note").value.trim();
-    var btn = $("#sr-btn");
-    btn.disabled = true;
-    api("/entry/return", { method: "POST", body: body }).then(function (r) {
-      btn.disabled = false;
-      if (!r.ok) { entryMsg("err", (r.data && r.data.error) || "Return entry failed."); return; }
-      entryMsg("ok", "Return #" + r.data.returnId + " created for order #" + r.data.orderId + " ✓");
-      ["#sr-oid", "#sr-awb", "#sr-courier", "#sr-note"].forEach(function (s) { $(s).value = ""; });
-    }).catch(function () { btn.disabled = false; });
-  });
-
-  $("#sr-recv-btn").addEventListener("click", function () {
-    var id = Number($("#sr-recv").value);
-    if (!id) { entryMsg("err", "Return ID daalo."); return; }
-    api("/entry/return/" + id + "/receive", { method: "POST" }).then(function (r) {
-      if (r.status === 204) { entryMsg("ok", "Return #" + id + " marked RECEIVED ✓"); $("#sr-recv").value = ""; }
-      else entryMsg("err", (r.data && r.data.error) || "Receive failed.");
-    });
-  });
-
-  // ---------- team & permissions ----------
-  var SECTIONS = ["orders", "scan", "inventory", "dispatch", "returns", "finance", "reports", "setup", "team"];
-  var canManageTeam = myPermissions.indexOf("team") !== -1 || auth.role === "OWNER" || auth.role === "ADMIN";
-
-  var SECTION_LABELS = {
-    orders: "Orders", scan: "Scan", inventory: "Inventory", dispatch: "Dispatch",
-    returns: "Returns", finance: "Finance", reports: "Reports", setup: "Setup", team: "Team"
+  var DS_RETURN_LABELS = {
+    INITIATED: "Initiated", IN_TRANSIT: "In Transit", RECEIVED: "Received",
+    QC_PASSED: "QC Passed", QC_FAILED: "QC Failed", RESTOCKED: "Restocked", CLOSED: "Closed",
   };
+  var DS_DUE_LABELS = { DUE: "Due", OVERDUE: "Overdue", RECEIVED_ON_TIME: "Received — on time", RECEIVED_LATE: "Received — late" };
 
-  function loadTeam() {
-    if (!canManageTeam) return;
-    $("#team-panel").hidden = false;
-    api("/users").then(function (r) {
-      if (!r.ok || !Array.isArray(r.data)) return;
-      $("#team-count").textContent = String(r.data.length);
-      var tb = $("#team-table tbody");
-      var iAmOwner = auth.role === "OWNER";
-      tb.innerHTML = r.data.map(function (u) {
-        var perms = u.role === "OWNER" || u.role === "ADMIN"
-          ? "<span class='pill pill-ok'>ALL (role)</span>"
-          : (u.permissions && u.permissions.length
-            ? u.permissions.map(function (p) { return "<span class='mp-tag'>" + esc(p) + "</span>"; }).join(" ")
-            : "<span class='pill pill-pend'>role defaults</span>");
-        var actions = "";
-        // OWNER row editable only by OWNER (self/other owner); everyone else by OWNER/ADMIN.
-        if (u.role !== "OWNER" || iAmOwner) {
-          actions += "<button type='button' class='bm-mini' data-u-edit='" + u.id + "'>Edit</button> ";
-        }
-        if (u.role !== "OWNER") {
-          actions += "<button type='button' class='bm-mini' data-u-toggle='" + u.id + "'>" + (u.isActive ? "Deactivate" : "Activate") + "</button>" +
-            " <button type='button' class='bm-mini danger' data-u-del='" + u.id + "'>Revoke all</button>";
-        }
-        return "<tr data-u-row='" + u.id + "'>" +
-          "<td><b>" + esc(u.displayName || u.email) + "</b><div style='font-size:11px;color:var(--muted)'>" + esc(u.email) + "</div></td>" +
-          "<td><span class='mp-tag'>" + esc(u.role) + "</span></td>" +
-          "<td>" + (u.isActive ? "<span class='pill pill-ok'>ACTIVE</span>" : "<span class='pill pill-red'>OFF</span>") + "</td>" +
-          "<td style='white-space:normal'>" + perms + "</td>" +
-          "<td>" + actions + "</td></tr>";
-      }).join("");
+  function dsFmtDate(v) {
+    if (!v) return "—";
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  }
 
-      $all("[data-u-toggle]").forEach(function (b) {
-        b.addEventListener("click", function () {
-          var id = b.getAttribute("data-u-toggle");
-          var row = r.data.find(function (x) { return String(x.id) === String(id); });
-          api("/users/" + id, { method: "PATCH", body: { isActive: !row.isActive } }).then(function (res) {
-            if (res.status === 204) loadTeam(); else entryMsg("err", (res.data && res.data.error) || "Failed.");
-          });
-        });
-      });
-      $all("[data-u-del]").forEach(function (b) {
-        b.addEventListener("click", function () {
-          var id = b.getAttribute("data-u-del");
-          if (!confirm("Remove ALL section access for this user? (user stays, all sections revoked)")) return;
-          api("/users/" + id, { method: "PATCH", body: { permissions: [] } }).then(function (res) {
-            if (res.status === 204) { loadTeam(); entryMsg("ok", "All sections revoked — user falls back to minimal read-only."); }
-            else entryMsg("err", (res.data && res.data.error) || "Failed.");
-          });
-        });
-      });
-
-      // ---- inline Edit drawer: name / email / password / role / sections ----
-      $all("[data-u-edit]").forEach(function (b) {
-        b.addEventListener("click", function () {
-          var id = b.getAttribute("data-u-edit");
-          var u = r.data.find(function (x) { return String(x.id) === String(id); });
-          if (!u) return;
-          var existing = document.getElementById("u-edit-" + id);
-          if (existing) { existing.remove(); return; } // toggle closed
-          $all("tr[data-edit-row]").forEach(function (x) { x.remove(); });
-
-          var isOwnerTarget = u.role === "OWNER";
-          var isRoleUser = !isOwnerTarget && u.role !== "ADMIN"; // sections UI only for OPS/VIEWER
-          var mode = u.permissions == null ? "defaults" : (u.permissions.length ? "custom" : "none");
-
-          var boxes = SECTIONS.map(function (s) {
-            var on = Array.isArray(u.permissions) && u.permissions.indexOf(s) !== -1;
-            return "<label style='display:inline-flex;align-items:center;gap:5px;margin:2px 10px 2px 0;font-size:12px;color:var(--text)'>" +
-              "<input type='checkbox' class='u-sec' data-sec='" + s + "'" + (on ? " checked" : "") + "/> " + esc(SECTION_LABELS[s] || s) + "</label>";
-          }).join("");
-
-          var html =
-            "<tr data-edit-row data-edit-id='" + id + "'><td colspan='5'>" +
-            "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px'>" +
-            "<label style='font-size:12px;color:var(--muted)'>Name<input class='u-name' type='text' value='" + esc(u.displayName || "") + "' style='margin-top:4px'/></label>" +
-            "<label style='font-size:12px;color:var(--muted)'>Email<input class='u-email' type='email' value='" + esc(u.email) + "' style='margin-top:4px'/></label>" +
-            "<label style='font-size:12px;color:var(--muted)'>New Password <span style='opacity:.6'>(blank = no change)</span><input class='u-pass' type='password' placeholder='min 8 chars' style='margin-top:4px'/></label>" +
-            (isOwnerTarget ? "" :
-              "<label style='font-size:12px;color:var(--muted)'>Role<select class='u-role' style='margin-top:4px'>" +
-              ["OPS", "ADMIN", "VIEWER"].map(function (ro) { return "<option" + (u.role === ro ? " selected" : "") + ">" + ro + "</option>"; }).join("") +
-              "</select></label>") +
-            "</div>" +
-            (isRoleUser
-              ? "<div style='margin-bottom:10px'><div style='font-size:12px;color:var(--muted);margin-bottom:4px'>Sections access (tick = allow)</div>" + boxes +
-                "<div style='font-size:11px;color:var(--muted);margin-top:4px'>" +
-                "<label style='margin-right:12px'><input type='radio' name='umode-" + id + "' value='custom'" + (mode === "custom" ? " checked" : "") + " class='u-mode'/> Custom (upar tick kiye)</label>" +
-                "<label style='margin-right:12px'><input type='radio' name='umode-" + id + "' value='defaults'" + (mode === "defaults" ? " checked" : "") + " class='u-mode'/> Role defaults</label>" +
-                "<label><input type='radio' name='umode-" + id + "' value='none'" + (mode === "none" ? " checked" : "") + " class='u-mode'/> None (read-only)</label></div></div>"
-              : (isOwnerTarget ? "<div style='font-size:12px;color:var(--muted);margin-bottom:10px'>OWNER — sab sections by role. Sirf naam/email/password edit hoga.</div>" : "")) +
-            "<button type='button' class='btn u-save' style='padding:7px 16px'>Save Changes</button>" +
-            "</td></tr>";
-          var row = document.querySelector("tr[data-u-row='" + id + "']");
-          if (row && row.insertAdjacentHTML) row.insertAdjacentHTML("afterend", html);
-
-          var editRow = document.querySelector("tr[data-edit-id='" + id + "']");
-          if (!editRow) return;
-          editRow.querySelector(".u-save").addEventListener("click", function () {
-            var body = {};
-            var name = editRow.querySelector(".u-name").value.trim();
-            var email = editRow.querySelector(".u-email").value.trim();
-            var pass = editRow.querySelector(".u-pass").value;
-            if (name && name !== (u.displayName || "")) body.displayName = name;
-            if (email && email !== u.email) body.email = email;
-            if (pass) {
-              if (pass.length < 8) { entryMsg("err", "Password min 8 characters ka hona chahiye."); return; }
-              body.password = pass;
-            }
-            var roleSel = editRow.querySelector(".u-role");
-            if (roleSel && roleSel.value !== u.role) body.role = roleSel.value;
-            var modeEl = editRow.querySelector(".u-mode:checked");
-            if (modeEl) {
-              if (modeEl.value === "custom") body.permissions = Array.prototype.slice.call(editRow.querySelectorAll(".u-sec:checked")).map(function (c) { return c.getAttribute("data-sec"); });
-              else if (modeEl.value === "defaults") body.permissions = null;
-              else body.permissions = [];
-            }
-            if (!Object.keys(body).length) { entryMsg("err", "Kuch change nahi kiya."); return; }
-            api("/users/" + id, { method: "PATCH", body: body }).then(function (res) {
-              if (res.status === 204) { entryMsg("ok", "User updated ✓"); loadTeam(); }
-              else entryMsg("err", (res.data && res.data.error) || "Update failed.");
-            });
-          });
-        });
-      });
+  function loadDailySummary() {
+    api("/dashboard/daily-summary?days=30").then(function (r) {
+      if (!r.ok || !r.data) return;
+      dailySummary = r.data;
+      renderDsTotals();
+      renderDsPlatform();
+      renderDsDaily();
     });
   }
 
-  $("#tu-form").addEventListener("submit", function (e) {
-    e.preventDefault();
-    var body = {
-      email: $("#tu-email").value.trim(),
-      password: $("#tu-pass").value,
-      displayName: $("#tu-name").value.trim(),
-      role: $("#tu-role").value,
-    };
-    var btn = $("#tu-btn");
-    btn.disabled = true;
-    api("/users", { method: "POST", body: body }).then(function (r) {
-      btn.disabled = false;
-      if (!r.ok) { entryMsg("err", (r.data && r.data.error) || "Could not add user."); return; }
-      entryMsg("ok", "User added ✓ — ab permissions set karo (neeche table me)");
-      ["#tu-name", "#tu-email", "#tu-pass"].forEach(function (s) { $(s).value = ""; });
-      loadTeam();
-    }).catch(function () { btn.disabled = false; });
+  function renderDsTotals() {
+    var t = (dailySummary && dailySummary.totals) || {};
+    $("#ds-totals").innerHTML = DS_TILES.map(function (tile) {
+      var val = t[tile.key];
+      var hasData = val != null && Number(val) > 0;
+      return "<div class='ds-tile'>" +
+        "<div class='ds-tile-label'>" + esc(tile.label) + "</div>" +
+        "<button type='button' class='ds-tile-btn' data-metric='" + tile.key + "'" + (hasData ? "" : " disabled") + ">" +
+          tile.fmt(val) +
+        "</button>" +
+        "</div>";
+    }).join("");
+  }
+
+  function renderDsPlatform() {
+    var rows = (dailySummary && dailySummary.byPlatform) || [];
+    var tb = $("#ds-platform-table tbody");
+    $("#ds-platform-empty").hidden = rows.length > 0;
+    tb.innerHTML = rows.map(function (row) {
+      return "<tr>" +
+        "<td><b>" + esc(row.marketplace) + "</b></td>" +
+        "<td>" + dsLinkCell(row.ordersDispatched, "ordersDispatched", { platform: row.marketplace }, num) + "</td>" +
+        "<td>" + dsLinkCell(row.dispatchAmount, "dispatchAmount", { platform: row.marketplace }, money) + "</td>" +
+        "<td>" + dsLinkCell(row.returnsReceived, "returnsReceived", { platform: row.marketplace }, num) + "</td>" +
+        "</tr>";
+    }).join("");
+  }
+
+  function renderDsDaily() {
+    var rows = (dailySummary && dailySummary.byDate) || [];
+    var tb = $("#ds-daily-table tbody");
+    tb.innerHTML = rows.map(function (row) {
+      return "<tr>" +
+        "<td>" + dsFmtDate(row.date) + "</td>" +
+        "<td>" + dsLinkCell(row.ordersDispatched, "ordersDispatched", { date: row.date }, num) + "</td>" +
+        "<td>" + dsLinkCell(row.returnsExpected, "returnsExpected", { date: row.date }, num) + "</td>" +
+        "<td>" + dsLinkCell(row.returnsReceived, "returnsReceived", { date: row.date }, num) + "</td>" +
+        "</tr>";
+    }).join("");
+  }
+
+  // A table cell that's a plain number when zero, and a clickable
+  // drill-down link when not — data-* attributes carry the metric + filters
+  // for the click handler below instead of one handler per cell.
+  function dsLinkCell(val, metric, extra, fmt) {
+    var n = Number(val || 0);
+    if (!n) return "<span style='color:var(--muted)'>" + fmt(val) + "</span>";
+    var attrs = "data-metric='" + metric + "'";
+    if (extra && extra.date) attrs += " data-date='" + esc(extra.date) + "'";
+    if (extra && extra.platform) attrs += " data-platform='" + esc(extra.platform) + "'";
+    return "<button type='button' class='ds-link' " + attrs + ">" + fmt(val) + "</button>";
+  }
+
+  function dsMetricLabel(metric) {
+    var found = DS_TILES.filter(function (t) { return t.key === metric; })[0];
+    return found ? found.label : metric;
+  }
+
+  function openDailySummaryDetail(metric, filters) {
+    filters = filters || {};
+    var qs = "metric=" + encodeURIComponent(metric);
+    if (filters.date) qs += "&date=" + encodeURIComponent(filters.date);
+    if (filters.platform) qs += "&platform=" + encodeURIComponent(filters.platform);
+
+    var titleBits = [dsMetricLabel(metric)];
+    if (filters.platform) titleBits.push(filters.platform);
+    if (filters.date) titleBits.push(dsFmtDate(filters.date));
+
+    var m = window.NcrModal.open({
+      title: titleBits.join(" — "),
+      wide: true,
+      bodyHtml: "<div id='ds-detail-body' class='empty'>Loading…</div>",
+    });
+
+    api("/dashboard/daily-summary/detail?" + qs).then(function (r) {
+      var body = m.body.querySelector("#ds-detail-body");
+      if (!r.ok || !r.data || !Array.isArray(r.data.rows) || !r.data.rows.length) {
+        body.className = "empty";
+        body.textContent = "No records found.";
+        return;
+      }
+      var rows = r.data.rows;
+      if (r.data.kind === "orders") {
+        body.outerHTML =
+          "<div class='tablewrap'><table><thead><tr>" +
+            "<th>Order No</th><th>Marketplace</th><th>Brand</th><th>AWB</th><th>Status</th><th>Dispatched</th><th>Amount (₹)</th>" +
+          "</tr></thead><tbody>" +
+          rows.map(function (row) {
+            return "<tr>" +
+              "<td><b>" + esc(row.orderNo) + "</b></td>" +
+              "<td>" + esc(row.marketplace) + "</td>" +
+              "<td>" + esc(row.brand) + "</td>" +
+              "<td>" + esc(row.awbNumber || "—") + "</td>" +
+              "<td>" + esc((row.status || "").replace(/_/g, " ")) + "</td>" +
+              "<td>" + dsFmtDate(row.dispatchedAt) + "</td>" +
+              "<td>" + money(row.invoiceAmount) + "</td>" +
+              "</tr>";
+          }).join("") +
+          "</tbody></table></div>";
+      } else {
+        body.outerHTML =
+          "<div class='tablewrap'><table><thead><tr>" +
+            "<th>Order No</th><th>Marketplace</th><th>Dispatch AWB</th><th>Return AWB</th><th>Initiated</th><th>Expected By</th><th>Received</th><th>Status</th>" +
+          "</tr></thead><tbody>" +
+          rows.map(function (row) {
+            return "<tr>" +
+              "<td><b>" + esc(row.orderNo) + "</b></td>" +
+              "<td>" + esc(row.marketplace) + "</td>" +
+              "<td>" + esc(row.dispatchAwb || "—") + "</td>" +
+              "<td>" + esc(row.returnAwb || "—") + "</td>" +
+              "<td>" + dsFmtDate(row.initiatedAt) + "</td>" +
+              "<td>" + dsFmtDate(row.expectedReturnDate) + "</td>" +
+              "<td>" + dsFmtDate(row.deliveredAt) + "</td>" +
+              "<td><span class='status due-" + esc(row.dueStatus) + "'>" + esc(DS_DUE_LABELS[row.dueStatus] || row.dueStatus) + "</span></td>" +
+              "</tr>";
+          }).join("") +
+          "</tbody></table></div>";
+      }
+    });
+  }
+
+  $("#daily-summary-panel").addEventListener("click", function (e) {
+    var btn = e.target.closest(".ds-tile-btn, .ds-link");
+    if (!btn || btn.disabled) return;
+    var metric = btn.getAttribute("data-metric");
+    if (!metric) return;
+    openDailySummaryDetail(metric, {
+      date: btn.getAttribute("data-date") || undefined,
+      platform: btn.getAttribute("data-platform") || undefined,
+    });
   });
 
   // ---------- boot ----------
   loadSummary();
-  loadOrders();
-  renderParties();
-  renderSkuPicker();
-  loadTeam();
 })();

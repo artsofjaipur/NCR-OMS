@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<script>try{var t=localStorage.getItem("ncr_theme");if(t&&t!=="midnight-gold")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Orders — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+<link rel="stylesheet" href="/nav.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Orders</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <a href="/entry" class="tb-logout" style="text-decoration:none">✍️ Single Entry</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- ==================== ORDERS ====================
+       Split out of /app (Dashboard) into its own page — Claude (Anthropic)
+       2026-09-25, per user request (Hinglish): "dusra summery desboard par
+       hai jo sahi hai lekin order page bhi vahi par ahi dono ko alag alag
+       kaam hai to usi hisab se karo na" — the KPI/Daily-Summary dashboard
+       and the order list are different jobs and shouldn't share one page.
+       Search is now server-side across the FULL order list (was previously
+       client-side over only the loaded page — see public/orders.js and
+       src/routes/orders.ts for the fix; user report: "order kese find hoga
+       samjh me nahi aara, awb search karne ka option nahi aara"). -->
+  <section class="panel wide">
+    <div class="panel-head">
+      <h2 class="serif">Orders</h2>
+      <span class="chip chip-dim" id="orders-count-chip">—</span>
+    </div>
+    <p class="panel-sub">Order no, AWB ya SKU se search karo — poore order list me dhoondta hai, sirf is page par jo load hua hai usme nahi.</p>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <input id="orders-search" type="text" placeholder="Search order no / SKU / AWB" style="flex:1;min-width:220px" />
+      <select id="orders-status-filter">
+        <option value="">All statuses</option>
+        <option value="CREATED">Created</option>
+        <option value="READY_TO_DISPATCH">Ready to Dispatch</option>
+        <option value="DISPATCHED">Dispatched</option>
+        <option value="DELIVERED">Delivered</option>
+        <option value="CANCELLED">Cancelled</option>
+        <option value="RTO_INITIATED">RTO Initiated</option>
+        <option value="ON_HOLD">On Hold</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="orders-today-only" style="width:auto" /> Today only
+      </label>
+    </div>
+    <div class="tablewrap">
+      <table id="orders-table">
+        <thead>
+          <tr><th>Order No</th><th>Marketplace</th><th>SKU</th><th>AWB</th><th>Status</th><th>Packed</th><th>Return</th><th>Ordered</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="orders-empty" class="empty">No orders found.</div>
+    </div>
+    <div style="text-align:center;margin-top:14px">
+      <button type="button" class="btn btn-ghost" id="orders-load-more" hidden>Load more</button>
+    </div>
+  </section>
+
+</main>
+
+<script src="/orders.js"></script>
+<script src="/modal.js"></script>
+<script src="/nav.js"></script>
+</body>
+</html>

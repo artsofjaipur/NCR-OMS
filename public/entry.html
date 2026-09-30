@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<script>try{var t=localStorage.getItem("ncr_theme");if(t&&t!=="midnight-gold")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Single Entry — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+<link rel="stylesheet" href="/nav.css" />
+</head>
+<body>
+
+<!-- Single Entry — split out of /app into its own page by Claude
+     (Anthropic) 2026-09-11. Redesigned 2026-09-19 per user request
+     ("dilogbox se kaam me lo... attractive banao") — New Order / New
+     Return / Mark Received are now three action cards that each open a
+     modal dialog (public/modal.js), and recent entries made this session
+     show up in a small log below so the page doesn't feel empty. See
+     BRAIN.md. -->
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Single Entry</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <section class="panel wide">
+    <div class="panel-head">
+      <h2 class="serif">Single Entry</h2>
+      <span class="chip chip-dim">MANUAL ONE-OFF</span>
+    </div>
+    <p class="panel-sub">Ek-ek entry bina CSV ke — order ya return. Stock, ledger, brand, store — sab auto-connect hota hai. Bulk import ke liye <a href="/app" style="color:var(--gold)">Dashboard</a> ka Upload Orders use karo.</p>
+
+    <div class="entry-cards">
+      <button type="button" class="entry-card" id="so-open-btn">
+        <span class="entry-card-ico">＋</span>
+        <span class="entry-card-title">New Order</span>
+        <span class="entry-card-sub">Single order — stock reserved, ledger connected</span>
+      </button>
+      <button type="button" class="entry-card" id="sr-open-btn">
+        <span class="entry-card-ico">↩</span>
+        <span class="entry-card-title">New Return</span>
+        <span class="entry-card-sub">Log a return against an existing order</span>
+      </button>
+      <button type="button" class="entry-card" id="sr-recv-open-btn">
+        <span class="entry-card-ico">✓</span>
+        <span class="entry-card-title">Mark Return Received</span>
+        <span class="entry-card-sub">Close out a return once goods are back</span>
+      </button>
+    </div>
+
+    <div id="entry-result" class="result" hidden></div>
+    <div class="section-head-row" style="margin-top:22px">
+      <div class="fgrid-title" style="margin:0">This Session</div>
+    </div>
+    <div id="entry-log" class="empty-state">Koi entry nahi ki gayi ab tak is session mein.</div>
+  </section>
+
+</main>
+
+<script src="/entry.js"></script>
+<script src="/modal.js"></script>
+<script src="/nav.js"></script>
+</body>
+</html>

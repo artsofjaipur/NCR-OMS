@@ -83,6 +83,17 @@
   });
 
   // ---------- pack scan ----------
+  // Cross-company (2026-09-25): the scan matches whichever company/brand the
+  // label actually belongs to, among every company this login has dispatch
+  // access to -- server picks it, so the company/brand is always shown back
+  // here rather than assumed from whichever company happens to be current.
+  function loadTodayCount() {
+    api("/dispatch/scan/today-count").then(function (r) {
+      if (r.ok && r.data) $("#pack-today-chip").textContent = (r.data.count || 0) + " scanned today";
+    });
+  }
+  loadTodayCount();
+
   $("#pack-form").addEventListener("submit", function (e) {
     e.preventDefault();
     var input = $("#pack-code");
@@ -94,12 +105,14 @@
       input.value = "";
       input.focus();
       if (!r.ok) { beep("err"); addFeed("err", code, (r.data && r.data.error) || "Scan failed", "NOT FOUND"); return; }
+      var companyTag = r.data.company ? r.data.company + " · " : "";
       if (r.data.alreadyPacked) {
         beep("dup");
-        addFeed("dup", r.data.order + " — " + r.data.brand, r.data.marketplace + " · " + r.data.courier + " · packed earlier", "ALREADY PACKED");
+        addFeed("dup", r.data.order + " — " + r.data.brand, companyTag + r.data.marketplace + " · " + r.data.courier + " · packed earlier", "ALREADY PACKED");
       } else {
         beep("ok");
-        addFeed("ok", r.data.order + " — " + r.data.brand, r.data.marketplace + " · " + r.data.sellerAccount + " · " + r.data.courier, "PACKED → READY");
+        addFeed("ok", r.data.order + " — " + r.data.brand, companyTag + r.data.marketplace + " · " + r.data.sellerAccount + " · " + r.data.courier, "PACKED → READY");
+        loadTodayCount();
       }
     }).catch(function () { $("#pack-btn").disabled = false; beep("err"); addFeed("err", code, "Network error", "ERROR"); });
   });
@@ -157,7 +170,8 @@
       input.focus();
       if (!r.ok) { beep("err"); addFeed("err", code, (r.data && r.data.error) || "Scan failed", "NOT FOUND"); return; }
       beep("ok");
-      addFeed("ok", r.data.order + " — " + r.data.brand, r.data.marketplace + (r.data.sku ? " · " + r.data.sku : "") + " · next: QC → restock", "RECEIVED");
+      var companyTag = r.data.company ? r.data.company + " · " : "";
+      addFeed("ok", r.data.order + " — " + r.data.brand, companyTag + r.data.marketplace + (r.data.sku ? " · " + r.data.sku : "") + " · next: QC → restock", "RECEIVED");
     }).catch(function () { $("#rcv-btn").disabled = false; beep("err"); addFeed("err", code, "Network error", "ERROR"); });
   });
 })();

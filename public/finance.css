@@ -1,7 +1,8 @@
 /* NCR-OMS Finance — extends dashboard tokens; money-first luxe layout. */
 
-/* ---------- KPI strip (4-up) ---------- */
+/* ---------- KPI strip (4-up / 2-up) ---------- */
 .kpis-4 { grid-template-columns: repeat(4, 1fr); }
+.kpis-2 { grid-template-columns: repeat(2, 1fr); }
 .kpi-warn .kpi-value { color: var(--gold); }
 
 /* ---------- tabs (same look as scan station) ---------- */
@@ -20,9 +21,9 @@
   text-align: left; font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase;
   color: var(--muted); padding: 12px 14px; border-bottom: 1px solid var(--line); white-space: nowrap;
 }
-.ftable tbody td { padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,.04); white-space: nowrap; }
+.ftable tbody td { padding: 11px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .ftable tbody tr:last-child td { border-bottom: none; }
-.ftable tbody tr:hover td { background: rgba(255,255,255,.02); }
+.ftable tbody tr:hover td { background: var(--overlay-1); }
 .ftable .empty { text-align: center; color: var(--muted); padding: 26px; white-space: normal; }
 .money { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 .money.pos { color: var(--green); }

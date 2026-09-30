@@ -54,7 +54,7 @@
       Array.prototype.forEach.call(tabs, function (x) { x.classList.remove("sel"); });
       b.classList.add("sel");
       var tab = b.getAttribute("data-tab");
-      ["pnl", "turnover", "balance", "expenses", "fees"].forEach(function (t) {
+      ["pnl", "turnover", "products", "balance", "expenses", "fees"].forEach(function (t) {
         $("#tab-" + t).hidden = t !== tab;
       });
     });
@@ -121,6 +121,39 @@
             return "<tr><td><b>" + esc(s.store) + "</b></td><td><span class='mp-tag'>" + esc(s.marketplace) + "</span> " + esc(s.brand) + "</td><td>" + s.orderCount + "</td>" + moneyCell(s.gmv, true) + "</tr>";
           }).join("")
         : "<tr><td colspan='4' class='empty'>No sales yet</td></tr>";
+    }).catch(function () {});
+  }
+
+  // ============ PRODUCTS ============
+  // Added by Claude (Anthropic) 2026-09-25, user request (Hinglish): "ek
+  // konsa sku sabse jyada sale hora pata nahi chal raha / konsi size sabse
+  // jyada sale hori / konse store par order aara konse sku me size me abhi
+  // system nahi bana sayd." Same period as Turnover (?start=&end=, default
+  // last 90 days) -- GET /reports/products (src/routes/reports.ts).
+  function loadProducts() {
+    return api("/reports/products").then(function (r) {
+      if (!r.ok) return;
+      var d = r.data;
+
+      $("#pr-period").textContent = fmtDate(d.start) + " → " + fmtDate(d.end);
+
+      $("#pr-skus tbody").innerHTML = d.topSkus.length
+        ? d.topSkus.map(function (s) {
+            return "<tr><td><b>" + esc(s.sku) + "</b></td><td>" + esc(s.productTitle || "—") + "</td><td>" + Number(s.qty).toLocaleString("en-IN") + "</td>" + moneyCell(s.revenue, true) + "</tr>";
+          }).join("")
+        : "<tr><td colspan='4' class='empty'>No sales in this period</td></tr>";
+
+      $("#pr-sizes tbody").innerHTML = d.topSizes.length
+        ? d.topSizes.map(function (s) {
+            return "<tr><td><b>" + esc(s.size) + "</b></td><td>" + Number(s.qty).toLocaleString("en-IN") + "</td>" + moneyCell(s.revenue, true) + "</tr>";
+          }).join("")
+        : "<tr><td colspan='3' class='empty'>No sales in this period</td></tr>";
+
+      $("#pr-store-sku-size tbody").innerHTML = d.byStoreSkuSize.length
+        ? d.byStoreSkuSize.map(function (row) {
+            return "<tr><td><b>" + esc(row.store) + "</b> <span class='mp-tag'>" + esc(row.marketplace) + "</span></td><td>" + esc(row.sku) + "</td><td>" + esc(row.size) + "</td><td>" + Number(row.qty).toLocaleString("en-IN") + "</td>" + moneyCell(row.revenue, true) + "</tr>";
+          }).join("")
+        : "<tr><td colspan='5' class='empty'>No sales in this period</td></tr>";
     }).catch(function () {});
   }
 
@@ -242,6 +275,7 @@
   // ---------- boot ----------
   loadPnl();
   loadTurnover();
+  loadProducts();
   loadBalance();
   loadExpenses();
   loadFees();

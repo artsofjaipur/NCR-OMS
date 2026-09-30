@@ -150,11 +150,60 @@ body.has-nav {
 }
 .np-actions a:hover, .np-actions button:hover { background: rgba(212,175,55,.14); color: #f6d466; }
 
+/* ---------- workspace (company) switcher — added by Claude (Anthropic) 2026-09-11 ---------- */
+.np-switch {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 11px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  border: 1px solid rgba(212,175,55,.35);
+  background: rgba(212,175,55,.08);
+  color: #f2ecdc;
+  font-family: inherit;
+  cursor: pointer;
+}
+.np-switch option { background: #14142a; color: #f2ecdc; }
+.np-add-company {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 10.5px;
+  padding: 4px 0;
+  border-radius: 7px;
+  border: 1px dashed rgba(212,175,55,.4);
+  background: transparent;
+  color: rgba(212,175,55,.85);
+  cursor: pointer;
+  font-family: inherit;
+}
+.np-add-company:hover { background: rgba(212,175,55,.1); color: #f6d466; }
+
+/* ---------- content theme picker — added by Claude (Anthropic) 2026-09-25,
+   user request: "4-5 theme bhi add karo jisse acha professional ban jaye".
+   Same visual treatment as .np-switch above -- this sidebar rail itself
+   stays fixed dark-navy across every theme on purpose; only the page
+   content (app.css vars) changes. See app.css for the theme definitions. */
+.np-theme-label { font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,.4); margin-top: 10px; display: block; }
+.np-theme {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 11px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  border: 1px solid rgba(212,175,55,.35);
+  background: rgba(212,175,55,.08);
+  color: #f2ecdc;
+  font-family: inherit;
+  cursor: pointer;
+}
+.np-theme option { background: #14142a; color: #f2ecdc; }
+
 /* ---------- assistant floating widget ---------- */
 .asst-fab {
   position: fixed;
   right: 18px; bottom: 18px;
   width: 52px; height: 52px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid rgba(212,175,55,.5);
   background: linear-gradient(135deg, #1b1b36, #101024);
@@ -166,6 +215,12 @@ body.has-nav {
   box-shadow: 0 8px 30px rgba(0,0,0,.45);
 }
 .asst-fab:hover { transform: scale(1.06); }
+.asst-fab .fab-avatar {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
 .asst-fab .a-dot {
   position: absolute;
   top: -2px; right: -2px;
@@ -199,7 +254,7 @@ body.has-nav {
   border-bottom: 1px solid rgba(212,175,55,.18);
   display: flex; align-items: center; gap: 8px;
 }
-.asst-head .ah-ico { font-size: 18px; }
+.asst-head .ah-ico { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex: none; }
 .asst-head .ah-title { font-weight: 700; font-size: 14px; color: #f6d466; font-family: "Playfair Display", Georgia, serif; }
 .asst-head .ah-sub { font-size: 10.5px; color: rgba(255,255,255,.45); }
 .asst-head button {

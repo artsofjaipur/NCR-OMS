@@ -1,12 +1,20 @@
+/**
+ * `GET /my-companies` + `POST /switch-company` added by Claude (Anthropic)
+ * 2026-09-11 — a real, one-time-authenticated (password already checked at
+ * login) way for a user to move between every company their email is an
+ * active member of, without logging out. See BRAIN.md 2026-09-11 entry and
+ * the matching `POST /companies` in `src/routes/companies.ts`.
+ */
 import { Router } from "express";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import crypto from "crypto";
 import { db } from "../db/client";
 import { companies, users, warehouses } from "../db/schema";
 import { verifyPassword, hashPassword } from "../security/password";
 import { signSession } from "../security/jwt";
 import { resolveSections } from "../security/permissions";
+import { requireAuth } from "../middleware/auth";
 import { HttpError } from "../middleware/errorHandler";
 
 export const authRouter = Router();
@@ -50,7 +58,12 @@ authRouter.post("/register", async (req, res, next) => {
     const result = await db.transaction(async (tx) => {
       const [company] = await tx
         .insert(companies)
-        .values({ legalName: body.companyName, displayName: body.displayName ?? body.companyName })
+        // Bug fix 2026-09-11 (found while testing DELETE /companies/me — see
+        // BUGRESOLVE.md Bug #7): this used to fall back to body.displayName,
+        // which is the PERSON's name, not the company's — so a company's own
+        // profile silently showed the owner's name instead of the company
+        // name whenever a display name was given at signup.
+        .values({ legalName: body.companyName, displayName: body.companyName })
         .returning({ id: companies.id });
 
       // Every company needs a default warehouse for stock ledger entries.
@@ -83,33 +96,63 @@ authRouter.post("/login", async (req, res, next) => {
 
     let user;
     if (body.companyId !== undefined) {
+      // Second pass of the company-picker flow below (or a direct call that
+      // already knows its companyId) -- exact lookup, password checked below.
       [user] = await db
         .select()
         .from(users)
         .where(and(eq(users.companyId, body.companyId), eq(users.email, body.email)))
         .limit(1);
-    } else {
-      // Email-only login: resolve the company automatically, but only when the
-      // email maps to exactly one active account across all companies.
-      const matches = await db
-        .select()
-        .from(users)
-        .where(and(eq(users.email, body.email), eq(users.isActive, true)))
-        .limit(2);
-      if (matches.length > 1) {
-        throw new HttpError(
-          409,
-          "This email is linked to multiple workspaces. Enter your workspace ID to continue.",
-        );
+      if (!user || !user.isActive || !(await verifyPassword(user.passwordHash, body.password))) {
+        throw new HttpError(401, "Invalid credentials");
       }
-      user = matches[0];
+    } else {
+      // Email-only login (the normal case): the same email can be an active
+      // user in more than one company (each is its own tenant with its own
+      // `users` row) -- one login should still get you in without asking for
+      // an opaque numeric id up front. Check the password against every
+      // company that email belongs to and let it resolve on its own:
+      //   - matches exactly one -> log straight in, no extra step at all
+      //     (the common case: same person, a different password per company,
+      //     or only ever had one company to begin with).
+      //   - matches more than one (the same password reused across
+      //     companies) -> instead of erroring, hand back the real company
+      //     names so the frontend can show a plain pick-a-company list; the
+      //     chosen company's id is resubmitted automatically, the person
+      //     never has to know or type an id themselves.
+      //   - matches none -> invalid credentials, same as any wrong password.
+      const candidates = await db.select().from(users).where(and(eq(users.email, body.email), eq(users.isActive, true)));
+
+      const verified = [];
+      for (const candidate of candidates) {
+        if (await verifyPassword(candidate.passwordHash, body.password)) verified.push(candidate);
+      }
+
+      if (verified.length === 0) {
+        throw new HttpError(401, "Invalid credentials");
+      }
+
+      if (verified.length > 1) {
+        const companyRows = await db
+          .select({ id: companies.id, displayName: companies.displayName })
+          .from(companies)
+          .where(inArray(companies.id, verified.map((v) => v.companyId)));
+        const byId = new Map(companyRows.map((c) => [c.id, c.displayName]));
+
+        return res.status(300).json({
+          needsCompanySelection: true,
+          companies: verified.map((v) => ({
+            companyId: v.companyId,
+            companyName: byId.get(v.companyId) ?? `Company #${v.companyId}`,
+            role: v.role,
+          })),
+        });
+      }
+
+      user = verified[0];
     }
 
     if (!user || !user.isActive) {
-      throw new HttpError(401, "Invalid credentials");
-    }
-    const ok = await verifyPassword(user.passwordHash, body.password);
-    if (!ok) {
       throw new HttpError(401, "Invalid credentials");
     }
 
@@ -194,6 +237,82 @@ authRouter.post("/reset-password", async (req, res, next) => {
       .where(eq(users.id, user.id));
 
     res.json({ message: "Password updated. You can now sign in with your new password." });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Every company the CURRENT session's email is an active member of — the
+ * workspace switcher's data source. Requires a valid session (a bearer
+ * token proves the password was already checked once); no password is
+ * re-asked here, same trust boundary a "switch account" menu normally uses.
+ */
+authRouter.get("/my-companies", requireAuth, async (req, res, next) => {
+  try {
+    const [me] = await db.select({ email: users.email }).from(users).where(eq(users.id, req.session!.userId)).limit(1);
+    if (!me) throw new HttpError(404, "Current user not found");
+
+    const rows = await db
+      .select({
+        companyId: companies.id,
+        companyName: companies.displayName,
+        role: users.role,
+        userId: users.id,
+      })
+      .from(users)
+      .innerJoin(companies, eq(companies.id, users.companyId))
+      .where(and(eq(users.email, me.email), eq(users.isActive, true)));
+
+    res.json(
+      rows.map((r) => ({
+        companyId: r.companyId,
+        companyName: r.companyName,
+        role: r.role,
+        current: r.companyId === req.session!.companyId,
+      })),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+const switchCompanySchema = z.object({ companyId: z.number().int().positive() });
+
+/**
+ * Re-issues a session JWT scoped to a different company, but ONLY when the
+ * current session's email has its own active user row there — this is a
+ * company switch for one identity, never a way to hop into someone else's
+ * account. No password re-entry (the bearer token already proves it).
+ */
+authRouter.post("/switch-company", requireAuth, async (req, res, next) => {
+  try {
+    const body = switchCompanySchema.parse(req.body);
+
+    const [me] = await db.select({ email: users.email }).from(users).where(eq(users.id, req.session!.userId)).limit(1);
+    if (!me) throw new HttpError(404, "Current user not found");
+
+    const [target] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.companyId, body.companyId), eq(users.email, me.email), eq(users.isActive, true)))
+      .limit(1);
+    if (!target) {
+      throw new HttpError(403, "You don't have an account in that company");
+    }
+
+    const token = signSession({ userId: target.id, companyId: target.companyId, role: target.role });
+    const [company] = await db.select({ displayName: companies.displayName }).from(companies).where(eq(companies.id, target.companyId)).limit(1);
+
+    res.json({
+      token,
+      userId: target.id,
+      companyId: target.companyId,
+      role: target.role,
+      displayName: target.displayName,
+      companyName: company?.displayName ?? null,
+      permissions: await resolveSections({ session: { userId: target.id, role: target.role } } as never),
+    });
   } catch (err) {
     next(err);
   }

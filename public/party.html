@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<script>try{var t=localStorage.getItem("ncr_theme");if(t&&t!=="midnight-gold")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Party Master — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+<link rel="stylesheet" href="/nav.css" />
+</head>
+<body>
+
+<!-- Party Master — split out of /app's "setup-box" into its own page by
+     Claude (Anthropic) 2026-09-11. Redesigned 2026-09-19 per user request
+     ("dilogbox se kaam me lo... attractive banao") — Add/Edit Party and
+     Stock In (Purchase Bill) both now happen in modal dialogs
+     (public/modal.js) instead of always-visible inline forms, so the page
+     itself is just the party table + a Stock In history-style action bar.
+     See BRAIN.md. -->
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Party Master</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- ==================== PARTY / SUPPLIER DIRECTORY ==================== -->
+  <section class="panel wide">
+    <div class="section-head-row">
+      <div class="panel-head" style="margin-bottom:0">
+        <h2 class="serif">Party Master</h2>
+        <span class="chip chip-dim" id="party-count">0</span>
+      </div>
+      <button type="button" class="btn" id="pt-open-btn" style="width:auto;padding:10px 18px">＋ Add Party</button>
+    </div>
+    <p class="panel-sub" style="margin-top:10px">Parties / suppliers jinse stock aata hai — purchase bills aur ledger inhi se link hote hain.</p>
+    <div id="party-result" class="result" hidden></div>
+
+    <div class="tablewrap"><table class="ftable" id="party-table">
+      <thead><tr><th>Name</th><th>GSTIN</th><th>Phone</th><th>Email</th><th>City</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ==================== STOCK IN (PURCHASE BILL) ==================== -->
+  <section class="panel wide">
+    <div class="section-head-row">
+      <div class="panel-head" style="margin-bottom:0">
+        <h2 class="serif">Stock In</h2>
+        <span class="chip chip-dim" id="pi-count">0</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn-ghost" id="pi-import-btn" style="width:auto;padding:10px 18px">⬆ Import Stock Sheet (CSV)</button>
+        <button type="button" class="btn" id="pi-open-btn" style="width:auto;padding:10px 18px">＋ Stock In Entry</button>
+      </div>
+    </div>
+    <p class="panel-sub" style="margin-top:10px">Har entry auto-calculate hoti hai (Qty × Rate + GST = Payable) — edit/delete dono available hain, sab kuch dialog box me.</p>
+    <div id="setup-result" class="result" hidden></div>
+
+    <label style="max-width:280px;display:block;margin:10px 0">Party se filter <select id="pi-filter-supplier"><option value="">— sabhi parties —</option></select></label>
+
+    <div class="tablewrap"><table class="ftable" id="pi-table">
+      <thead><tr>
+        <th>Date</th><th>Party</th><th>SKU / Product</th><th style="text-align:right">Qty</th><th style="text-align:right">Rate</th>
+        <th style="text-align:right">Subtotal</th><th style="text-align:right">GST</th><th style="text-align:right">Payable</th>
+        <th>Chalan</th><th>Bill No.</th><th style="text-align:right">Paid</th><th style="text-align:right">Balance Due</th>
+        <th style="text-align:right">Running Bal.</th><th></th>
+      </tr></thead>
+      <tbody><tr><td colspan="14" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+</main>
+
+<script src="/party.js"></script>
+<script src="/modal.js"></script>
+<script src="/nav.js"></script>
+</body>
+</html>

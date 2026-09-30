@@ -37,6 +37,12 @@
 
   function validEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
 
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
   function markInvalid(input, bad) {
     if (input) input.classList.toggle("invalid", bad);
     return bad;
@@ -70,41 +76,58 @@
       });
     });
 
-    loginForm.addEventListener("submit", function (e) {
-      e.preventDefault();
-      hideAlert();
-      var email = $("#email");
-      var pass = $("#password");
-      var ws = $("#workspaceId");
-      var bad = false;
-      bad = markInvalid(email, !validEmail(email.value.trim())) || bad;
-      bad = markInvalid(pass, pass.value.length === 0) || bad;
-      if (bad) { showAlert("err", "Please enter a valid email and password."); return; }
-
-      var payload = { email: email.value.trim(), password: pass.value };
-      if (ws && ws.value.trim() !== "") {
-        var n = Number(ws.value.trim());
-        if (!Number.isInteger(n) || n <= 0) {
-          showAlert("err", "Workspace ID must be a number — leave it empty if you don't have one.");
-          return;
-        }
-        payload.companyId = n;
-      }
-
+    function doLogin(payload) {
       setLoading($("#login-btn"), true);
       api("/auth/login", payload).then(function (r) {
         if (r.ok) {
           try { sessionStorage.setItem("ncr_auth", JSON.stringify(r.data)); } catch (err) {}
           showAlert("ok", "Signed in. Taking you to your workspace…");
           setTimeout(function () { window.location.href = "/app.html"; }, 500);
-        } else {
-          setLoading($("#login-btn"), false);
-          showAlert("err", r.data && r.data.error ? r.data.error : "Sign-in failed. Try again.");
+          return;
         }
+        setLoading($("#login-btn"), false);
+        // Same email+password matched more than one company (same password
+        // reused across companies) -- show a plain pick-a-company list
+        // instead of an error. Picking just resubmits with that company's
+        // id; nobody has to know or type an id themselves.
+        if (r.status === 300 && r.data && r.data.needsCompanySelection && Array.isArray(r.data.companies)) {
+          var box = $("#company-pick");
+          var list = $("#company-pick-list");
+          if (box && list) {
+            hideAlert();
+            list.innerHTML = "";
+            r.data.companies.forEach(function (c) {
+              var b = document.createElement("button");
+              b.type = "button";
+              b.innerHTML = "<span>" + esc(c.companyName) + "</span><span class='role-chip'>" + esc(c.role) + "</span>";
+              b.addEventListener("click", function () {
+                doLogin({ email: payload.email, password: payload.password, companyId: c.companyId });
+              });
+              list.appendChild(b);
+            });
+            box.hidden = false;
+            loginForm.style.display = "none";
+            return;
+          }
+        }
+        showAlert("err", r.data && r.data.error ? r.data.error : "Sign-in failed. Try again.");
       }).catch(function () {
         setLoading($("#login-btn"), false);
         showAlert("err", "Network error — is the server running?");
       });
+    }
+
+    loginForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      hideAlert();
+      var email = $("#email");
+      var pass = $("#password");
+      var bad = false;
+      bad = markInvalid(email, !validEmail(email.value.trim())) || bad;
+      bad = markInvalid(pass, pass.value.length === 0) || bad;
+      if (bad) { showAlert("err", "Please enter a valid email and password."); return; }
+
+      doLogin({ email: email.value.trim(), password: pass.value });
     });
   }
 

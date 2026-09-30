@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<script>try{var t=localStorage.getItem("ncr_theme");if(t&&t!=="midnight-gold")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Company & Setup — NCR-OMS</title>
+<link rel="icon" href="/brand/vardhamiti.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/finance.css" />
+<link rel="stylesheet" href="/nav.css" />
+</head>
+<body>
+
+<!-- Company & Setup — split out of /app (was the "setup-box" in-page anchor
+     plus the always-visible Company Profile panel) into its own page by
+     Claude (Anthropic) 2026-09-11. Redesigned 2026-09-19 (per user request:
+     "data stracture sahi se karo... jaha dilogbox se kam ho jaye vaha
+     dilogbox se kaam me lo... attractive banao") — Bank Accounts and Brand
+     management now use the shared dialog (public/modal.js) instead of
+     inline accordions, and both render as a proper row list. See BRAIN.md. -->
+
+<header class="topbar">
+  <div class="tb-left">
+    <img src="/brand/vardhamiti.svg" alt="" class="tb-logo" />
+    <span class="tb-name serif">NCR<span>-</span>OMS</span>
+    <span class="tb-company">Company &amp; Setup</span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-company" id="tb-company"></span>
+    <span class="tb-role" id="tb-role"></span>
+    <a href="/app" class="tb-logout" style="text-decoration:none">← Dashboard</a>
+    <button id="logout-btn" class="tb-logout" type="button">Logout</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- ==================== COMPANY PROFILE ==================== -->
+  <section class="panel wide" id="company-profile-panel">
+    <div class="panel-head">
+      <h2 class="serif">Company Profile</h2>
+      <span class="chip chip-dim" id="cp-prefix-chip">—</span>
+    </div>
+    <p class="panel-sub">Company ki details, order reference prefix (PO NO. / RF NO. / RG NO.), GST/IEC, bank accounts aur access — invoice aur export ke liye.</p>
+
+    <button type="button" class="cp-summary-row" id="cp-summary-toggle" aria-expanded="false" aria-controls="cp-details">
+      <span class="cp-summary-text">
+        <b id="cp-summary-name">—</b>
+        <span id="cp-summary-meta" class="small">Loading…</span>
+      </span>
+      <span class="cp-summary-cta" id="cp-summary-cta">View Profile ▾</span>
+    </button>
+
+    <div class="notes-grid" id="cp-details" hidden>
+      <form id="cp-form" class="fgrid fgrid-tight">
+        <div class="fgrid-title">Company Details</div>
+        <label>Legal Name <input id="cp-legal" type="text" /></label>
+        <label>Display Name <input id="cp-display" type="text" /></label>
+        <label>Order Ref Prefix <input id="cp-prefix" type="text" placeholder="PO NO." style="text-transform:uppercase" /></label>
+        <label>GSTIN <input id="cp-gstin" type="text" maxlength="15" placeholder="08XXXXXXXXXXXXX" style="text-transform:uppercase" /></label>
+        <label>IEC / PAN <input id="cp-iec" type="text" maxlength="10" placeholder="XXXXXXXXXX" style="text-transform:uppercase" /></label>
+        <label>Phone <input id="cp-phone" type="text" placeholder="+91 ..." /></label>
+        <label>WhatsApp <input id="cp-whatsapp" type="text" placeholder="+91 ..." /></label>
+        <label>Email <input id="cp-email" type="email" placeholder="info@company.com" /></label>
+        <label style="grid-column:1/-1">Address Line 1 <input id="cp-addr1" type="text" /></label>
+        <label>City <input id="cp-city" type="text" /></label>
+        <label>State <input id="cp-state" type="text" /></label>
+        <label>PIN Code <input id="cp-pincode" type="text" maxlength="6" /></label>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn" id="cp-save-btn">Save Company Profile</button>
+          <span class="small" id="cp-readonly-note" hidden style="color:var(--muted)">Sirf OWNER/ADMIN edit kar sakte hain</span>
+        </div>
+      </form>
+
+      <div class="fgrid fgrid-tight">
+        <div class="section-head-row" style="grid-column:1/-1;margin-bottom:0">
+          <div class="fgrid-title" style="margin:0">Bank Accounts <span class="small" style="color:var(--muted);font-weight:400">— optional, invoice auto-fill</span></div>
+          <button type="button" class="btn ghostbtn2" id="bk-open-btn" style="width:auto;padding:8px 16px">＋ Add Bank Account</button>
+        </div>
+        <div id="cp-banks" style="grid-column:1/-1;margin-top:10px"></div>
+      </div>
+
+      <!-- Who can access this company — grid-column:1/-1 on every child
+           matters: .fgrid uses grid-template-columns: repeat(auto-fit,
+           minmax(150px,1fr)), so without it these sit side-by-side instead
+           of stacking. -->
+      <div class="fgrid fgrid-tight" style="grid-column:1/-1">
+        <div class="fgrid-title">Who Can Access This Company</div>
+        <div id="cp-access-list" class="small" style="grid-column:1/-1;color:var(--muted)">Loading…</div>
+        <a href="/team" class="small" style="grid-column:1/-1;display:inline-block;margin-top:8px;color:var(--gold);text-decoration:none">Manage team &amp; permissions →</a>
+      </div>
+
+      <!-- Delete company — OWNER-only, guarded server-side against real
+           business history and against deleting your only company. -->
+      <div class="fgrid fgrid-tight cp-danger" id="cp-danger-block" style="grid-column:1/-1" hidden>
+        <div class="fgrid-title" style="color:var(--red)">Danger Zone</div>
+        <p class="small" style="grid-column:1/-1;color:var(--muted);margin-bottom:10px">Delete sirf tabhi hoti hai jab is company me koi order/purchase/expense history na ho, aur aapki kam se kam ek aur company ho.</p>
+        <button type="button" class="btn ghostbtn2" id="cp-delete-btn" style="grid-column:1/-1;justify-self:start;border-color:var(--red);color:var(--red)">Delete This Company</button>
+      </div>
+    </div>
+    <div id="cp-result" class="result" hidden></div>
+  </section>
+
+  <!-- ==================== BRANDS + SETUP ==================== -->
+  <section class="panel wide">
+    <div class="section-head-row">
+      <div class="panel-head" style="margin-bottom:0">
+        <h2 class="serif">Brands &amp; Setup</h2>
+        <span class="chip chip-dim" id="brand-count">0</span>
+      </div>
+      <button type="button" class="btn" id="sb-open-btn" style="width:auto;padding:10px 18px">＋ Add Brand / Seller Account</button>
+    </div>
+    <p class="panel-sub" style="margin-top:10px">New workspace? Add a brand, then attach its marketplace seller account — then CSV uploads can flow (from the <a href="/app" style="color:var(--gold)">Dashboard</a>). Brand with order history cannot be deleted (rename instead).</p>
+    <div id="brand-list"></div>
+    <div id="setup-result" class="result" hidden></div>
+  </section>
+
+</main>
+
+<script src="/setup.js"></script>
+<script src="/modal.js"></script>
+<script src="/nav.js"></script>
+</body>
+</html>
