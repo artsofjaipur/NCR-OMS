@@ -20,6 +20,17 @@
 
 ## 2. Change Log (most recent first)
 
+### [2026-09-30] — Credit note "ledger me reflect nahi hua" — root cause + fix (bill-linkage dropdown, empty-party guard, ledger bill refs) — **by Buffy (Codebuff)**
+- **Symptom (user):** Nyko Mart ke invoice 276437655 / AWB 876499947613 ke against credit note add kiya tha, lekin party ledger me reflect nahi hua.
+- **Root cause (live DB probe se confirmed):** note DB me pahuncha hi nahi tha — `credit_notes` me sirf 2 purane test notes the. Nyko Mart workspace (company 12, 2441 orders) me **koi party/supplier registered hi nahi hai**, to Finance → Credit/Debit Notes form ka Party dropdown khali tha → submit kabhi successful nahi hua (silent failure, koi error message nahi). Backend ledger endpoint me notes **already included** the; party ledger sirf party-linked data dikhata hai (AWB order-level reference hai, ledger supplier-scoped hai).
+- **Fix (3 parts):**
+  1. **Against Bill dropdown** in Credit/Debit note forms (`public/finance.html` + `public/finance.js`): bills list se invoice select karo, party auto-set ho jata hai (party-scoped filtering dono direction me). Note ab bill ke against adjust hota hai — Bills tab ke "Credited" column me bhi dikhta hai.
+  2. **Empty-party guard:** jab workspace me koi party nahi, forms ke dropdowns me clear Hinglish message ("Workspace me koi party (supplier) nahi hai — pehle Dashboard → Brands & Setup se add karo") + notes/payments result area me same warning — ab silent failure impossible.
+  3. **Ledger detail enrichment** (`src/routes/finance.ts`): CREDIT_NOTE/DEBIT_NOTE entries ab linked bill ka invoice number dikhate hain ("reason · against bill INV-...") via leftJoin purchaseEntries.
+- **Verification (e2e, live DB, 13/13 pass — `scripts/e2e-creditnote.js`):** login → parties/bills load → credit note WITH bill linkage create → ledger me CREDIT_NOTE entry (bill ref ke saath) → ledger closing = party balance consistency → duplicate note 409 → delete cleanup → ledger se entry gayab. `tsc --noEmit` clean.
+- **User action needed:** Nyko Mart workspace me pehle party (supplier) add karo, phir credit note dobara banao — wo turant Parties → Ledger me dikhega.
+- **Files:** `public/finance.html`, `public/finance.js`, `src/routes/finance.ts`, `scripts/e2e-creditnote.js` (new), `BRAIN.md`.
+
 ### [2026-09-09] — Left sidebar navigation + Virtual Assistant (alerts + Hinglish Q&A) — **by Buffy (Codebuff)**
 - **User request:** left menu bar with all masters (orders, returns, finance, company setup, party master…), profile-based visibility, aur ek virtual assistant jo OMS ke saath "flart" (alert) karta rahe.
 - **Sidebar (`public/nav.css` + `public/nav.js`, injected on /app, /finance, /reports, /scan):**

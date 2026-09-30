@@ -574,21 +574,25 @@ financeRouter.get("/ledger", async (req, res, next) => {
     }
 
     const cns = await db
-      .select({ id: creditNotes.id, date: creditNotes.noteDate, number: creditNotes.noteNumber, amount: creditNotes.amount, reason: creditNotes.reason })
+      .select({ id: creditNotes.id, date: creditNotes.noteDate, number: creditNotes.noteNumber, amount: creditNotes.amount, reason: creditNotes.reason, billId: creditNotes.purchaseEntryId, billInvoice: purchaseEntries.supplierInvoiceNumber })
       .from(creditNotes)
+      .leftJoin(purchaseEntries, eq(purchaseEntries.id, creditNotes.purchaseEntryId))
       .where(and(eq(creditNotes.companyId, companyId), eq(creditNotes.supplierId, supplierId)))
       .orderBy(asc(creditNotes.noteDate));
     for (const n of cns) {
-      events.push({ date: n.date, type: "CREDIT_NOTE", ref: n.number, detail: n.reason ?? "Supplier credit note", debit: "0.00", credit: Number(n.amount).toFixed(2) });
+      const billRef = n.billId ? ` against bill ${n.billInvoice ?? "#" + n.billId}` : "";
+      events.push({ date: n.date, type: "CREDIT_NOTE", ref: n.number, detail: (n.reason ? n.reason : "Supplier credit note") + billRef, debit: "0.00", credit: Number(n.amount).toFixed(2) });
     }
 
     const dns = await db
-      .select({ id: debitNotes.id, date: debitNotes.noteDate, number: debitNotes.noteNumber, amount: debitNotes.amount, reason: debitNotes.reason })
+      .select({ id: debitNotes.id, date: debitNotes.noteDate, number: debitNotes.noteNumber, amount: debitNotes.amount, reason: debitNotes.reason, billId: debitNotes.purchaseEntryId, billInvoice: purchaseEntries.supplierInvoiceNumber })
       .from(debitNotes)
+      .leftJoin(purchaseEntries, eq(purchaseEntries.id, debitNotes.purchaseEntryId))
       .where(and(eq(debitNotes.companyId, companyId), eq(debitNotes.supplierId, supplierId)))
       .orderBy(asc(debitNotes.noteDate));
     for (const n of dns) {
-      events.push({ date: n.date, type: "DEBIT_NOTE", ref: n.number, detail: n.reason ?? "Debit note claim", debit: Number(n.amount).toFixed(2), credit: "0.00" });
+      const billRef = n.billId ? ` against bill ${n.billInvoice ?? "#" + n.billId}` : "";
+      events.push({ date: n.date, type: "DEBIT_NOTE", ref: n.number, detail: (n.reason ? n.reason : "Debit note claim") + billRef, debit: Number(n.amount).toFixed(2), credit: "0.00" });
     }
 
     events.sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));

@@ -134,7 +134,8 @@
       var tb = $("#bills-table tbody");
       if (!r.ok) { tb.innerHTML = "<tr><td colspan='9' class='empty'>Failed to load bills</td></tr>"; return; }
       $("#bills-chip").textContent = r.data.length + " BILLS";
-      if (!r.data.length) { tb.innerHTML = "<tr><td colspan='9' class='empty'>No bills yet — every Stock In with a party + invoice creates a bill here automatically.</td></tr>"; return; }
+      if (!r.data.length) { billsCache = []; tb.innerHTML = "<tr><td colspan='9' class='empty'>No bills yet — every Stock In with a party + invoice creates a bill here automatically.</td></tr>"; fillBillSelects(); return; }
+      billsCache = r.data;
       tb.innerHTML = r.data.map(function (b) {
         var cls = b.overdue ? " class='overdue-row'" : b.settled ? " class='settled-row'" : "";
         return "<tr" + cls + ">" +
@@ -150,6 +151,8 @@
           "</tr>";
       }).join("");
       bindPayButtons();
+      fillBillSelects();
+      hookBillSelects();
     }).catch(function () {});
   }
 
@@ -173,6 +176,7 @@
       if (!r.ok) { tb.innerHTML = "<tr><td colspan='8' class='empty'>Failed to load parties</td></tr>"; return; }
       partiesCache = r.data;
       fillPartySelects();
+      checkPartiesExist();
       if (!r.data.length) { tb.innerHTML = "<tr><td colspan='8' class='empty'>No parties yet — add one from the Dashboard (Brands &amp; Setup → Party / Supplier).</td></tr>"; return; }
       tb.innerHTML = r.data.map(function (p) {
         var bal = Number(p.balance);
@@ -224,6 +228,50 @@
   $("#ledger-close").addEventListener("click", function () { $("#ledger-box").hidden = true; });
 
   // ============ PAYMENTS ============
+  var billsCache = [];
+
+  function fillBillSelects() {
+    var opts = billsCache.map(function (b) {
+      var label = (b.invoiceNumber || "Bill #" + b.id) + " · " + (b.supplier || "—") + " · " + inr(b.total);
+      return "<option value='" + b.id + "' data-party='" + (b.supplierId || "") + "'>" + esc(label) + "</option>";
+    }).join("");
+    ["#cn-bill", "#dn-bill"].forEach(function (sel) {
+      var el = $(sel);
+      var cur = el.value;
+      el.innerHTML = "<option value=''>— koi bhi nahi (party account pe) —</option>" + opts;
+      if (cur) el.value = cur;
+    });
+  }
+
+  // Bills load hote hi note-form ke "Against Bill" selects bharo (party-scoped filtering on change).
+  function hookBillSelects() {
+    ["#cn-bill", "#dn-bill"].forEach(function (sel) {
+      var el = $(sel);
+      if (!el || el.dataset.bound) return;
+      el.dataset.bound = "1";
+      el.addEventListener("change", function () {
+        var opt = el.selectedOptions[0];
+        var party = opt && opt.getAttribute("data-party");
+        var prefix = sel === "#cn-bill" ? "#cn-" : "#dn-";
+        if (party) $(prefix + "party").value = party;
+      });
+    });
+    // Party badle to bill list usi party ke bills tak filter karo.
+    ["#cn-party", "#dn-party"].forEach(function (sel) {
+      var el = $(sel);
+      if (!el || el.dataset.bound) return;
+      el.dataset.bound = "1";
+      el.addEventListener("change", function () {
+        var pid = el.value;
+        var billSel = $(sel === "#cn-party" ? "#cn-bill" : "#dn-bill");
+        Array.prototype.forEach.call(billSel.options, function (o) {
+          var p = o.getAttribute("data-party");
+          o.hidden = !!(pid && p && p !== pid);
+        });
+      });
+    });
+  }
+
   function fillPartySelects() {
     var opts = partiesCache.map(function (p) {
       return "<option value='" + p.id + "'>" + esc(p.name) + " (bal " + inr(p.balance) + ")</option>";
@@ -234,6 +282,21 @@
       el.innerHTML = "<option value=''>— choose party —</option>" + opts;
       if (cur) el.value = cur;
     });
+  }
+
+  /** Parties na hon to forms dead hain — clear Hinglish error dikhao (silent save-failure se bachne ke liye). */
+  function checkPartiesExist() {
+    if (partiesCache.length > 0) return;
+    var msg = "Workspace me koi party (supplier) added nahi hai — note/payment save nahi ho sakta. Pehle Dashboard → Brands & Setup → Party / Supplier se party add karo, phir yahan wapas aao.";
+    ["#cn-party", "#dn-party", "#pay-party"].forEach(function (sel) { $(sel).innerHTML = "<option value=''>" + esc(msg) + "</option>"; });
+    var nr = $("#notes-result");
+    nr.hidden = false;
+    nr.className = "result bad";
+    nr.textContent = msg;
+    var pr = $("#pay-result");
+    pr.hidden = false;
+    pr.className = "result bad";
+    pr.textContent = msg;
   }
 
   function showResult(sel, ok, msg) {
@@ -292,20 +355,23 @@
       e.preventDefault();
       var prefix = kind === "credit" ? "#cn-" : "#dn-";
       var supplierId = Number($(prefix + "party").value);
-      if (!supplierId) { showResult("#notes-result", false, "Choose a party first"); return; }
+      if (!supplierId) { showResult("#notes-result", false, partiesCache.length ? "Choose a party first" : "Workspace me koi party (supplier) nahi hai — pehle Dashboard → Brands & Setup se add karo"); return; }
       var body = {
         supplierId: supplierId,
         noteNumber: $(prefix + "number").value.trim(),
         amount: $(prefix + "amount").value,
         reason: $(prefix + "reason").value.trim() || undefined,
       };
+      var billVal = $(prefix + "bill") ? $(prefix + "bill").value : "";
+      if (billVal) body.purchaseEntryId = Number(billVal);
       var btn = $(prefix + "btn");
       btn.disabled = true; btn.classList.add("loading");
       api("/finance/notes/" + kind, { method: "POST", body: body }).then(function (r) {
         btn.disabled = false; btn.classList.remove("loading");
         if (!r.ok) { showResult("#notes-result", false, (r.data && r.data.error) || "Failed"); return; }
-        showResult("#notes-result", true, (kind === "credit" ? "Credit" : "Debit") + " note added ✓");
+        showResult("#notes-result", true, (kind === "credit" ? "Credit" : "Debit") + " note added ✓ — Parties tab → Ledger button se party ledger me dikhega");
         ["number", "amount", "reason"].forEach(function (f) { $(prefix + f).value = ""; });
+        if ($(prefix + "bill")) $(prefix + "bill").value = "";
         loadNotes(); loadOverview(); loadParties(); loadBills();
       }).catch(function () { btn.disabled = false; btn.classList.remove("loading"); });
     });
